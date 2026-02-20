@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin</title>
+  <style>
+    :root{--green:#00C700;--muted:#f0f0f0}
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#fff;color:#222}
+    .wrap{max-width:1000px;margin:18px auto;padding:12px}
+    /* login */
+    .login-card{max-width:420px;margin:36px auto;padding:18px;border-radius:10px;background:#fafafa;border:1px solid #eee}
+    .login-card h2{color:var(--green);margin:0 0 12px}
+    .input{display:block;width:100%;padding:12px;border-radius:8px;border:1px solid #e6e6e6;margin-bottom:10px}
+    .row{display:flex;align-items:center;gap:8px}
+    .btn{padding:10px 14px;border-radius:8px;border:none;background:var(--green);color:#fff;cursor:pointer}
+    .link{color:var(--green);text-decoration:none}
+
+    /* main admin */
+    .top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #eee}
+    .search{flex:1;margin:0 12px}
+    .search input{width:100%;padding:12px;border-radius:24px;border:none;background:var(--muted)}
+    .admin-label{color:var(--green);font-weight:700}
+    .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;padding:18px}
+    .card{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px;border-radius:8px;border:1px solid #f1f1f1;background:#fff}
+    .card img{width:84px;height:84px;object-fit:cover;border-radius:6px}
+    .card .label{color:var(--green);font-weight:600}
+    .actions{display:flex;gap:8px;margin-top:6px}
+    .icon-btn{width:36px;height:36px;border-radius:6px;border:none;display:inline-flex;align-items:center;justify-content:center;font-size:18px;color:#fff}
+    .approve{background:var(--green)}
+    .reject{background:#e53935}
+    .status{display:flex;gap:6px;align-items:center;margin-top:6px}
+    .status .ok{color:var(--green);font-weight:700}
+    .status .no{color:#e53935;font-weight:700}
+    .bottom-nav{position:fixed;left:0;right:0;bottom:0;height:56px;background:var(--green);display:flex;align-items:center;justify-content:space-around;color:#fff}
+  </style>
+</head>
+<body>
+  <div class="wrap" id="app">
+    <!-- content injected by JS -->
+  </div>
+
+  <script>
+    const apiBase = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://127.0.0.1:5000' : window.location.origin;
+
+    // Auth helpers: persist in localStorage if remember, otherwise sessionStorage
+    function saveAuth(secret, remember){
+      const data = { secret };
+      if(remember) localStorage.setItem('admin_auth', JSON.stringify(data));
+      else sessionStorage.setItem('admin_auth', JSON.stringify(data));
+    }
+    function clearAuth(){ localStorage.removeItem('admin_auth'); sessionStorage.removeItem('admin_auth'); }
+    function getSavedSecret(){
+      const a = localStorage.getItem('admin_auth') || sessionStorage.getItem('admin_auth');
+      if(!a) return null; try{ return JSON.parse(a).secret }catch(e){return null}
+    }
+
+    async function checkAdminSecret(secret){
+      // Try to validate by calling /admin/reports with X-Admin-Secret header
+      try{
+        const resp = await fetch(apiBase + '/admin/reports', { headers: { 'X-Admin-Secret': secret }, method: 'GET' });
+        if(resp.ok) return { ok:true, offline:false };
+        if(resp.status === 403) return { ok:false, message:'ไม่ผ่านการยืนยัน (403)'};
+        // other non-OK statuses: still consider false
+        return { ok:false, message:'Error ' + resp.status };
+      }catch(err){
+        // network error (backend may not be running) -> allow offline mode but indicate it
+        return { ok:true, offline:true };
+      }
+    }
+
+    // Render login form
+    function renderLogin(message){
+      const app = document.getElementById('app');
+      app.innerHTML = `
+        <div class="login-card">
+          <h2>เข้าสู่ระบบผู้ดูแลระบบ</h2>
+          <div class="notice">กรุณาใส่ Admin secret เพื่อเข้าสู่ระบบ (สำหรับทดสอบท้องถิ่น ใช้ secret เดียวกับ backend)</div>
+          <input id="admin_secret" class="input" type="password" placeholder="Admin secret">
+          <label><input id="remember" type="checkbox"> จดจำบนเครื่องนี้</label>
+          <div style="height:10px"></div>
+          <div class="row"><button id="loginBtn" class="btn">เข้าสู่ระบบ</button> <button id="logoutBtn" class="btn" style="background:#888">ล้างข้อมูล</button></div>
+          <div style="margin-top:10px;color:#666">${message?message:''}</div>
+        </div>
+      `;
+      document.getElementById('loginBtn').addEventListener('click', async ()=>{
+        const secret = document.getElementById('admin_secret').value.trim();
+        const remember = document.getElementById('remember').checked;
+        if(!secret){ alert('กรุณาใส่ admin secret'); return; }
+        const info = await checkAdminSecret(secret);
+        if(info.ok){ saveAuth(secret, remember); renderMain(info.offline); }
+        else{ renderLogin('ล้มเหลว: ' + (info.message || 'ไม่ทราบสาเหตุ')); }
+      });
+      document.getElementById('logoutBtn').addEventListener('click', ()=>{ clearAuth(); alert('ข้อมูลถูกล้าง'); });
+    }
+
+    // Main admin UI
+    const items = [
+      {id:'class_food', label:'คลาสอาหาร', href:'admin_class_food.html'},
+      {id:'menu_food', label:'เมนูอาหาร', href:'admin_menu_food.html'},
+      {id:'personal', label:'กรอกข้อมูลส่วนบุคคล', href:'admin_personal_info.html'},
+      {id:'history', label:'ประวัติการกรอกข้อมูล', href:'admin_history.html'},
+      {id:'report', label:'รายงานปัญหา', href:'admin_reports.html'}
+    ];
+
+    const stateKey = 'admin_states_v1';
+    let states = JSON.parse(localStorage.getItem(stateKey) || '{}');
+    function saveStates(){ localStorage.setItem(stateKey, JSON.stringify(states)); }
+
+    function renderMain(offline){
+      const app = document.getElementById('app');
+      app.innerHTML = `
+        <div class="top"><div class="admin-label">Admin</div><div class="search"><input id="q" placeholder="ค้นหา...."></div><div style="width:36px;text-align:right"><a id="logout" class="link">ออกจากระบบ</a></div></div>
+        <div style="padding:8px;color:#666">${offline?'<strong>โหมดออฟไลน์:</strong> backend ไม่พร้อมใช้งาน — ใช้ข้อมูล local fallback':''}</div>
+        <div class="grid" id="grid"></div>
+        <div class="bottom-nav"><div>🏠</div><div>🔍</div><div>📋</div></div>
+      `;
+      document.getElementById('logout').addEventListener('click', ()=>{ clearAuth(); location.reload(); });
+      document.getElementById('q').addEventListener('input', renderGrid);
+      renderGrid();
+    }
+
+    function renderGrid(){
+      const grid = document.getElementById('grid'); grid.innerHTML = '';
+      const q = document.getElementById('q').value.trim().toLowerCase();
+      items.filter(it => !q || it.label.includes(q)).forEach(it => {
+        const st = states[it.id] || {approved:false,rejected:false};
+        const card = document.createElement('div'); card.className='card'; card.style.cursor='pointer';
+        card.addEventListener('click', ()=>{ if(it.href) window.location.href = it.href; });
+        const img = document.createElement('div'); img.style.width='84px'; img.style.height='84px'; img.style.borderRadius='6px'; img.style.background='#fafafa'; img.style.display='flex'; img.style.alignItems='center'; img.style.justifyContent='center'; img.textContent = '🍽️';
+        const lbl = document.createElement('div'); lbl.className='label'; lbl.textContent = it.label;
+        const actions = document.createElement('div'); actions.className='actions';
+        const aBtn = document.createElement('button'); aBtn.className='icon-btn approve'; aBtn.title='อนุมัติ'; aBtn.innerHTML='✓';
+        const rBtn = document.createElement('button'); rBtn.className='icon-btn reject'; rBtn.title='ปฏิเสธ'; rBtn.innerHTML='✕';
+        aBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); states[it.id] = {approved:true,rejected:false}; saveStates(); renderGrid(); });
+        rBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); states[it.id] = {approved:false,rejected:true}; saveStates(); renderGrid(); });
+        actions.appendChild(aBtn); actions.appendChild(rBtn);
+        const status = document.createElement('div'); status.className='status';
+        if(st.approved){ const ok=document.createElement('div'); ok.className='ok'; ok.textContent='อนุมัติ'; status.appendChild(ok); }
+        if(st.rejected){ const no=document.createElement('div'); no.className='no'; no.textContent='ปฏิเสธ'; status.appendChild(no); }
+        card.appendChild(img); card.appendChild(lbl); card.appendChild(actions); card.appendChild(status);
+        grid.appendChild(card);
+      });
+    }
+
+    // Boot: check saved secret and validate
+    (async function(){
+      const secret = getSavedSecret();
+      if(secret){
+        const info = await checkAdminSecret(secret);
+        if(info.ok){ renderMain(info.offline); return; }
+        // invalid saved secret -> clear and show login
+        clearAuth(); renderLogin('secret เก่าไม่ถูกต้อง');
+      } else {
+        renderLogin('');
+      }
+    })();
+  </script>
+</body>
+</html>

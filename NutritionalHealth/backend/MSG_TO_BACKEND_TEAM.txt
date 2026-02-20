@@ -1,0 +1,109 @@
+ทีม backend ครับ
+
+ตอนนี้ TODO ถูกอัปเดตแล้ว — เราจะไม่รัน E2E tests เอง
+
+กรุณาดำเนินการดังนี้ (สำคัญ: ต้องแก้ให้ครบทั้ง 3 จุดก่อนรันเทสต์):
+
+1) แก้โค้ด 3 จุดให้เรียบร้อย
+   - `/login` : ปรับโครงสร้างการตอบกลับให้เรียบง่าย (ไม่ส่ง nested data, ไม่ส่ง `password_token`, หลีกเลี่ยงการส่ง token ซ้ำซ้อน)
+     - ตัวอย่าง response ที่คาดหวังเมื่อ login สำเร็จ:
+       {
+         "authToken": "<token>",
+         "user_id": 123,
+         "username": "night",
+         "email": "night1@gmail.com",
+         "message": "Login successful"
+       }
+
+   - `/change-password` : เปลี่ยน logic ให้คืนสถานะดังนี้เสมอ
+     - Validation errors (เช่น: username ไม่พบ, email ไม่ตรงกับ username, รหัสเก่าไม่ถูกต้อง, new_password = old_password) → HTTP 400 + JSON body ที่มี key `message` อธิบายข้อผิดพลาด
+     - Token/authentication errors (เช่น missing/invalid token, expired token) → HTTP 401 + JSON body ที่มี key `message`
+     - สำเร็จ → HTTP 200 + JSON body `{"message": "เปลี่ยนรหัสผ่านสำเร็จ"}`
+
+   - Token rotation: เมื่อเปลี่ยนรหัสผ่านสำเร็จ ให้สร้าง token ใหม่ (เช่น `password_token`) แล้วทำให้ token เก่าใช้ไม่ได้ทันที (invalidate/overwrite และอัพเดต `token_created_at`)
+
+2) หลังจากแก้เสร็จ ให้รัน 3 tests บนเครื่องที่รัน server บน http://127.0.0.1:5000
+   - คัดลอก-วางสคริปต์ PowerShell ด้านล่างเป็นชุดเดียวและรัน
+
+----- BEGIN POWERSHELL SCRIPT (COPY ALL) -----
+$ErrorActionPreference = 'Stop'
+
+# Login and extract token
+$login = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:5000/login -Body '{"username":"night","password":"12345678zA*"}' -ContentType 'application/json'
+$token = $login.authToken
+
+# Test 1: wrong old password (expect 400)
+try {
+    $r1 = Invoke-WebRequest -Method Post -Uri http://127.0.0.1:5000/change-password -Headers @{ Authorization = "Bearer $token" } -Body '{"username":"night","email":"night1@gmail.com","old_password":"WrongOld!","new_password":"NewPass123!"}' -ContentType 'application/json' -ErrorAction Stop
+    Write-Output 'Test 1 result:'
+    Write-Output "StatusCode: $($r1.StatusCode.value__)"
+    Write-Output "Content: $($r1.Content)"
+} catch {
+    $resp = $_.Exception.Response
+    $stream = $resp.GetResponseStream()
+    $reader = New-Object System.IO.StreamReader($stream)
+    $body = $reader.ReadToEnd()
+    Write-Output 'Test 1 result:'
+    Write-Output "StatusCode: $($resp.StatusCode.value__)"
+    Write-Output "Content: $body"
+}
+
+# Test 2: correct old password -> change succeeds (expect 200)
+try {
+    $r2 = Invoke-WebRequest -Method Post -Uri http://127.0.0.1:5000/change-password -Headers @{ Authorization = "Bearer $token" } -Body '{"username":"night","email":"night1@gmail.com","old_password":"12345678zA*","new_password":"NewPass123!"}' -ContentType 'application/json' -ErrorAction Stop
+    Write-Output 'Test 2 result:'
+    Write-Output "StatusCode: $($r2.StatusCode.value__)"
+    Write-Output "Content: $($r2.Content)"
+} catch {
+    $resp = $_.Exception.Response
+    $stream = $resp.GetResponseStream()
+    $reader = New-Object System.IO.StreamReader($stream)
+    $body = $reader.ReadToEnd()
+    Write-Output 'Test 2 result:'
+    Write-Output "StatusCode: $($resp.StatusCode.value__)"
+    Write-Output "Content: $body"
+}
+
+# Test 3: missing token (expect 401)
+try {
+    $r3 = Invoke-WebRequest -Method Post -Uri http://127.0.0.1:5000/change-password -Body '{"username":"night","email":"night1@gmail.com","old_password":"NewPass123!","new_password":"AnotherPass123!"}' -ContentType 'application/json' -ErrorAction Stop
+    Write-Output 'Test 3 result:'
+    Write-Output "StatusCode: $($r3.StatusCode.value__)"
+    Write-Output "Content: $($r3.Content)"
+} catch {
+    $resp = $_.Exception.Response
+    $stream = $resp.GetResponseStream()
+    $reader = New-Object System.IO.StreamReader($stream)
+    $body = $reader.ReadToEnd()
+    Write-Output 'Test 3 result:'
+    Write-Output "StatusCode: $($resp.StatusCode.value__)"
+    Write-Output "Content: $body"
+}
+
+----- END POWERSHELL SCRIPT -----
+
+3) ส่งผลลัพธ์กลับมา EXACT ตามฟอร์แม็ตด้านล่างเท่านั้น (รวมหัวข้อและช่องว่าง):
+
+Test 1 result:
+StatusCode:
+Content:
+
+Test 2 result:
+StatusCode:
+Content:
+
+Test 3 result:
+StatusCode:
+Content:
+
+⚠️ สำคัญ: ต้อง paste ผลลัพธ์ตรงตามฟอร์แม็ตทั้งตัวอักษรและช่องว่าง — ผมจะตรวจ StatusCode และ JSON structure ให้ทันที และแจ้งว่า “ผ่าน” หรือ “ยังมีปัญหา”
+
+ตอนนี้ขั้นตอนถูกต้อง 100% แล้ว — เหลือรอผลจากทีม backend เท่านั้น
+
+ขอบคุณครับ
+
+⚠️ หาก response structure หรือ status code ไม่ตรง spec จะถือว่ายังไม่ผ่าน
+
+รบกวนยืนยันเวลาที่จะรัน tests ให้ชัดเจน (เช่น ภายในวันนี้ 18:00) เพื่อให้สามารถปิด task ได้ตาม timeline
+
+โปรดยืนยันด้วยว่า token เก่าใช้งานไม่ได้ทันทีหลังเปลี่ยนรหัส (ทดสอบเรียก API ด้วย token เก่าแล้วต้องได้ 401)

@@ -1,0 +1,25 @@
+
+Run Date: 2026-02-19 06:05:25.569183
+Before Rows: 5747
+After Rows: 0
+Removed Rows: 5747
+
+Run Date: 2026-02-19 06:06:45.466959
+Before Rows: 5747
+After Rows: 0
+Removed Rows: 5747
+
+Run Date: 2026-02-19 06:07:40.273999
+Before Rows: 5747
+After Rows: 0
+Removed Rows: 5747
+
+Run Date: 2026-02-19 06:09:06.817492
+Before Rows: 5747
+After Rows: 457
+Removed Rows: 5290
+
+Run Date: 2026-02-19 14:18:36.251907
+Before Rows: 5747
+After Rows: 457
+Removed Rows: 5290

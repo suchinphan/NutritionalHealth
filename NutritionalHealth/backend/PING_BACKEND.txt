@@ -1,0 +1,32 @@
+ทีม backend ครับ,
+
+รบกวนอัปเดตสถานะการแก้ไข 3 จุดตาม `CHANGE_REQUEST_FOR_TEAM.txt` และยืนยันเวลาที่จะรัน 3 E2E tests บน http://127.0.0.1:5000
+
+สิ่งที่ต้องทำก่อนรันเทสต์:
+- แก้ `/login` ให้ response เรียบง่าย (no nested data, no password_token)
+- แก้ `/change-password` ให้คืน 400/401/200 ตามเงื่อนไข
+- ทำ token rotation ให้ token เก่าหมดอายุทันทีเมื่อเปลี่ยนรหัส
+
+คำขอเพิ่มเติม:
+- รันสคริปต์ PowerShell ใน `MSG_TO_BACKEND_TEAM.txt` (คัดลอก-วางเป็นชุดเดียว)
+- ส่งผลลัพธ์กลับมา EXACT ตามฟอร์แม็ตนี้เท่านั้น:
+
+Test 1 result:
+StatusCode:
+Content:
+
+Test 2 result:
+StatusCode:
+Content:
+
+Test 3 result:
+StatusCode:
+Content:
+
+ขอผลภายในวันนี้เพื่อปิด task นี้ได้ไหมครับ? ถ้ามี blocker แจ้งสั้น ๆ ได้เลย (ไฟล์/line/exception)
+
+รบกวนยืนยันเวลาที่จะรัน tests ให้ชัดเจน (เช่น ภายในวันนี้ 18:00) เพื่อให้สามารถปิด task ได้ตาม timeline
+
+โปรดยืนยันด้วยว่า token เก่าใช้งานไม่ได้ทันทีหลังเปลี่ยนรหัส (ทดสอบเรียก API ด้วย token เก่าแล้วต้องได้ 401)
+
+ขอบคุณมากครับ

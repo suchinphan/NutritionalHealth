@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>กรอกข้อมูลส่วนตัว (Admin)</title>
+  <style>
+    :root{--green:#00C700;--muted:#f0f0f0}
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#fff;color:#222}
+    .top{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #eee}
+    .back{color:var(--green);text-decoration:none;font-weight:700;font-size:22px;margin-right:8px}
+    .title{color:var(--green);font-weight:700;font-size:18px}
+    .container{padding:16px}
+    label{display:block;color:var(--green);font-weight:600;margin-top:10px}
+    input, select{width:100%;padding:12px;border-radius:8px;border:none;background:var(--muted);box-sizing:border-box;margin-top:8px}
+    .btn{margin-top:20px;background:var(--green);color:#fff;padding:12px;border:none;border-radius:6px;width:100%;font-weight:700}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <a href="admin.html" class="back">‹</a>
+    <div class="title">กรอกข้อมูลส่วนตัว</div>
+  </div>
+  <div class="container">
+    <label>เพศ</label>
+    <select id="gender"><option value="">เลือกเพศ</option><option value="male">ชาย</option><option value="female">หญิง</option></select>
+
+    <label>อายุ</label>
+    <input id="age" type="number" placeholder="ระบุอายุ (ปี)">
+
+    <label>น้ำหนัก (กิโลกรัม)</label>
+    <input id="weight" type="number" placeholder="น้ำหนัก">
+
+    <label>ส่วนสูง (เซนติเมตร)</label>
+    <input id="height" type="number" placeholder="ส่วนสูง">
+
+    <label>ส่วนสูงสูงสุด (ถ้ามี)</label>
+    <input id="max_height" type="number" placeholder="(ไม่บังคับ)">
+
+    <button class="btn" id="save">บันทึก</button>
+  </div>
+  <script>
+    document.getElementById('save').addEventListener('click', ()=>{
+      const entry = {
+        id: Date.now(),
+        gender: document.getElementById('gender').value,
+        age: Number(document.getElementById('age').value)||null,
+        weight: Number(document.getElementById('weight').value)||null,
+        height: Number(document.getElementById('height').value)||null,
+        created: new Date().toISOString()
+      };
+      const key = 'user_entries';
+      const arr = JSON.parse(localStorage.getItem(key)||'[]');
+      arr.push(entry);
+      localStorage.setItem(key, JSON.stringify(arr));
+      alert('บันทึกข้อมูลผู้ใช้แล้ว (local)');
+      window.location.href='admin.html';
+    });
+  </script>
+</body>
+</html>

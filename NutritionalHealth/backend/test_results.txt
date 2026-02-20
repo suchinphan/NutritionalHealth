@@ -1,0 +1,11 @@
+﻿LOGIN_ERROR: The remote server returned an error: (401) Unauthorized.
+
+TEST1_ERROR: The remote server returned an error: (401) Unauthorized.
+
+TEST2_ERROR: The remote server returned an error: (401) Unauthorized.
+
+LOGIN_NEW_FAIL: The remote server returned an error: (401) Unauthorized.
+
+LOGIN_OLD_FAIL (expected): The remote server returned an error: (401) Unauthorized.
+
+TEST3_ERROR: The remote server returned an error: (401) Unauthorized.

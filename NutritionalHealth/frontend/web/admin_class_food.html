@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>คลาสอาหาร (Admin)</title>
+  <style>
+    :root{--green:#00C700;--muted:#f0f0f0}
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#fff;color:#222}
+    .top{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #eee}
+    .back{color:var(--green);text-decoration:none;font-weight:700;font-size:22px;margin-right:8px}
+    .title{color:var(--green);font-weight:700;font-size:18px}
+    .container{padding:18px}
+    label{display:block;color:var(--green);font-weight:600;margin-top:10px}
+    input, select, textarea{width:100%;padding:12px;border-radius:8px;border:none;background:var(--muted);box-sizing:border-box;margin-top:8px}
+    .btn{margin-top:20px;background:var(--green);color:#fff;padding:12px;border:none;border-radius:6px;width:140px;font-weight:700}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <a href="admin.html" class="back">‹</a>
+    <div class="title">คลาสอาหาร</div>
+  </div>
+  <div class="container">
+    <label>คลาสอาหาร</label>
+    <input id="class_name" placeholder="เลือกประเภทอาหาร">
+
+    <label>ค้นหาเมนูอาหารตามหมวดหมู่</label>
+    <input id="search_by_cat" placeholder="ค้นหาเมนูอาหาร (เช่น อาหารรสเผ็ด)">
+
+    <label>เมนูอาหาร</label>
+    <input id="class_menu" placeholder="ดูเมนูอาหารภายในเริ่มเลือก">
+
+    <div style="margin-top:18px">
+      <button class="btn" id="backBtn">กลับหน้าหลัก</button>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('backBtn').addEventListener('click', ()=>{ window.location.href = 'admin.html'; });
+  </script>
+</body>
+</html>

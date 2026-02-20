@@ -1,0 +1,90 @@
+กรุณาแก้ 3 จุดตามที่แจ้ง (/login structure, /change-password status code, token rotation)
+แล้วรัน 3 tests บน localhost
+ส่งผลกลับมาแบบ format นี้ EXACT เท่านั้น
+
+หลังจากคุณได้ผล test
+ส่งมาที่ผมทันที
+ผมจะ:
+- ตรวจ StatusCode
+- ตรวจ JSON structure
+- บอกเลยว่า “ผ่าน” หรือ “ยังมีปัญหา”
+
+ถ้ามีปัญหา จะบอกแก้ตรงไหนแบบสั้น ๆ
+
+---
+FORMAT ที่ต้องส่งกลับ (copy/paste EXACT):
+
+Test 1 result:
+StatusCode:
+Content:
+
+Test 2 result:
+StatusCode:
+Content:
+
+Test 3 result:
+StatusCode:
+Content:
+
+---
+Test cases (อธิบายสั้นๆ):
+
+Test 1 — old password ผิด
+Request: Authorization: Bearer <valid token>
+Body contains old_password incorrect
+Expect:
+StatusCode: 400
+Content: {"message":"รหัสผ่านเดิมไม่ถูกต้อง"}
+UI: ไม่ logout (SnackBar เท่านั้น)
+
+Test 2 — เปลี่ยนรหัสสำเร็จ
+Request: Authorization: Bearer <valid token>
+correct old_password -> set new_password
+Expect:
+StatusCode: 200
+Content: {"message":"เปลี่ยนรหัสผ่านสำเร็จ"}
+Verify:
+- old token -> 401
+- login ใหม่ -> ได้ token ใหม่
+- token ใหม่เรียก API -> ผ่าน
+
+Test 3 — ไม่มี/ผิด token
+Request: ไม่มี Authorization header (หรือ token ผิด)
+Expect:
+StatusCode: 401
+Content: {"message":"Authorization required"} หรือ {"message":"Invalid or expired token"}
+UI: logout + ไปหน้า Login
+
+---
+ข้อควรปฏิบัติในการแก้โค้ด (สรุป):
+1) /login
+- ใช้ check_password_hash(user.password_hash, password)
+- คืน 401 เฉพาะ user ไม่พบ หรือ password ผิด
+- Response ต้องเรียบง่าย: no nested data, no password_token, no duplicated tokens
+- ตัวอย่าง response ต้องเป็น:
+{
+  "authToken": "<token>",
+  "user_id": user.id,
+  "username": user.username,
+  "email": user.email,
+  "message": "Login successful"
+}
+
+2) Authorization middleware (ทุก endpoint ที่เช็ก token)
+- ตรวจ header ก่อน
+- แยก 401 สำหรับ token ผิด/ไม่มี
+- validation ผิด -> 400 เท่านั้น
+
+3) /change-password
+- ตรวจ validation ตามลำดับ: username exists, email matches, old_password correct, new_password != old
+- ถ้าผิด -> return 400 + {"message": "..."}
+- ถ้าผ่าน -> hash new password, generate new token, update DB, commit
+  new_token = secrets.token_urlsafe(32)
+  user.password_hash = generate_password_hash(new_password)
+  user.password_token = new_token
+  user.token_created_at = datetime.now(timezone.utc)
+  db.session.commit()
+- ห้ามเก็บ/คืน password เป็น plain text
+- ต้อง invalidate token เก่าทันที
+
+เมื่อเสร็จแล้ว ให้รัน 3 tests บน http://127.0.0.1:5000 และส่งผลกลับตาม FORMAT ด้านบน EXACT เท่านั้น

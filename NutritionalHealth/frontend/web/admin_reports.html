@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>รายงานปัญหา (Admin)</title>
+  <style>
+    :root{--green:#00C700;--muted:#f6f6f6}
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#fff;color:#222}
+    .top{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #eee}
+    .back{color:var(--green);text-decoration:none;font-weight:700;font-size:22px;margin-right:8px}
+    .title{color:var(--green);font-weight:700;font-size:18px}
+    .container{padding:16px}
+    .section-title{color:var(--green);font-weight:700;margin-bottom:8px}
+    .report{border:1px solid #eee;padding:12px;border-radius:8px;margin-bottom:12px;background:#fafafa}
+    .row{display:flex;gap:12px;align-items:center}
+    .checkbox{width:20px;height:20px;border:1px solid #ccc;border-radius:4px;margin-right:8px}
+    textarea{width:100%;height:80px;padding:8px;border-radius:6px;border:1px solid #ddd;box-sizing:border-box}
+    .btn{padding:10px 14px;border-radius:6px;border:none;font-weight:700}
+    .btn.primary{background:var(--green);color:#fff}
+    .btn.danger{background:#e53935;color:#fff}
+    .actions{display:flex;gap:8px;margin-top:8px}
+    .note{color:#666;font-size:13px;margin-top:8px}
+    .seed{font-size:12px;color:#666;margin-bottom:8px}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <a href="admin.html" class="back">‹</a>
+    <div class="title">รายงานปัญหา</div>
+  </div>
+
+  <div class="container">
+    <div class="section-title">ข้อมูลที่ได้รับ</div>
+    <div class="seed">(พยายามดึงจาก /admin/reports แล้ว fallback เป็นข้อมูลตัวอย่าง/จาก localStorage)</div>
+    <div id="list"></div>
+    <div class="note">หมายเหตุ: ปุ่มด้านล่างสำหรับจัดการสถานะในตัวอย่าง (localStorage). ถ้าต้องการเชื่อม backend โปรดให้ endpoint และวิธี auth.</div>
+  </div>
+
+  <script>
+    const listEl = document.getElementById('list');
+    const stateKey = 'user_reports_v1';
+
+    async function loadReports(){
+      // Try backend endpoints first
+      const tryUrls = ['/admin/reports','/reports'];
+      for(const p of tryUrls){
+        try{
+          const base = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://127.0.0.1:5000' : window.location.origin;
+          const res = await fetch(base + p);
+          if(res.ok){ const j = await res.json(); return {source:p,data:j}; }
+        }catch(e){/* ignore */}
+      }
+      // fallback to localStorage
+      const local = JSON.parse(localStorage.getItem(stateKey) || '[]');
+      if(local.length) return {source:'localStorage', data: local};
+
+      // sample data
+      return {source:'sample', data: [
+        {id:1, system:true, user:false, message:'ระบบล่มเมื่อกดบันทึกข้อมูล'},
+        {id:2, system:false, user:true, message:'ผู้ใช้แจ้งว่าเมนูไม่แสดงรูปภาพ'},
+      ]};
+    }
+
+    function saveLocal(data){ localStorage.setItem(stateKey, JSON.stringify(data)); }
+
+    function renderReport(it, idx, arr){
+      const r = document.createElement('div'); r.className='report';
+      const row = document.createElement('div'); row.className='row';
+      const cbSys = document.createElement('input'); cbSys.type='checkbox'; cbSys.className='checkbox'; cbSys.checked = !!it.system; cbSys.disabled = true;
+      const lblSys = document.createElement('div'); lblSys.textContent = 'ปัญหาระบบ';
+      const cbUser = document.createElement('input'); cbUser.type='checkbox'; cbUser.className='checkbox'; cbUser.checked = !!it.user; cbUser.disabled = true;
+      const lblUser = document.createElement('div'); lblUser.textContent = 'ปัญหาผู้ใช้';
+      row.appendChild(cbSys); row.appendChild(lblSys); row.appendChild(cbUser); row.appendChild(lblUser);
+      r.appendChild(row);
+
+      const ta = document.createElement('textarea'); ta.readOnly = true; ta.textContent = it.message || '';
+      r.appendChild(ta);
+
+      const actions = document.createElement('div'); actions.className='actions';
+      const resolveBtn = document.createElement('button'); resolveBtn.className='btn primary'; resolveBtn.textContent='แก้ไขแล้ว / ตอบกลับ';
+      const delBtn = document.createElement('button'); delBtn.className='btn danger'; delBtn.textContent='ลบ';
+      actions.appendChild(resolveBtn); actions.appendChild(delBtn);
+      r.appendChild(actions);
+
+      // status label
+      const status = document.createElement('div'); status.className='note'; status.textContent = it.resolved ? 'สถานะ: แก้ไขแล้ว' : 'สถานะ: ยังไม่แก้ไข';
+      r.appendChild(status);
+
+      resolveBtn.addEventListener('click', ()=>{
+        it.resolved = true; status.textContent = 'สถานะ: แก้ไขแล้ว';
+        if(arr.source==='localStorage'){ saveLocal(arr.data); } else { // update local fallback
+          const local = JSON.parse(localStorage.getItem(stateKey) || '[]');
+          const found = local.find(x=>x.id===it.id); if(found){ found.resolved=true; saveLocal(local); }
+        }
+      });
+
+      delBtn.addEventListener('click', ()=>{
+        if(!confirm('ลบรายงานนี้ออก?')) return;
+        // remove from localStorage if present
+        const local = JSON.parse(localStorage.getItem(stateKey) || '[]');
+        const idx = local.findIndex(x=>x.id===it.id);
+        if(idx>=0){ local.splice(idx,1); saveLocal(local); r.remove(); return; }
+        // otherwise just remove element
+        r.remove();
+      });
+
+      return r;
+    }
+
+    (async function(){
+      const res = await loadReports();
+      // normalize data array
+      let data = res.data;
+      if(!Array.isArray(data)){
+        // try to coerce object->array
+        if(typeof data === 'object') data = Object.values(data);
+        else data = [];
+      }
+      // attach source marker for save behavior
+      const wrapper = {source: res.source, data};
+      const list = document.getElementById('list');
+      if(data.length===0){ list.textContent = 'ยังไม่มีรายงาน'; return; }
+      // ensure items have id
+      data.forEach((it,i)=>{ if(!it.id) it.id = Date.now() + i; });
+      // store sample to localStorage if source is sample so admin can test
+      if(res.source==='sample') saveLocal(data);
+
+      data.forEach(it=>{ const el = renderReport(it,0,wrapper); list.appendChild(el); });
+    })();
+  </script>
+</body>
+</html>
