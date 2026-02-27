@@ -2379,7 +2379,32 @@ def save_selection():
         except Exception:
             dessert = None
     elif selected_dessert:
-        dessert = DessertMenu.query.filter_by(name=selected_dessert).first()
+        # DessertMenu schema has varied historically (some tables use `name`,
+        # others use `dessert_name`). Be defensive: inspect available
+        # columns and query by the present column to avoid OperationalError.
+        dessert = None
+        try:
+            cols = DessertMenu.__table__.columns.keys()
+        except Exception:
+            cols = []
+
+        try:
+            if 'name' in cols:
+                dessert = DessertMenu.query.filter_by(name=selected_dessert).first()
+            elif 'dessert_name' in cols:
+                dessert = DessertMenu.query.filter_by(dessert_name=selected_dessert).first()
+            else:
+                # Fallback: try case-insensitive match on either attribute
+                try:
+                    dessert = DessertMenu.query.filter(func.lower(DessertMenu.name) == selected_dessert.lower()).first()
+                except Exception:
+                    try:
+                        dessert = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == selected_dessert.lower()).first()
+                    except Exception:
+                        dessert = None
+        except Exception:
+            current_app.logger.exception('dessert lookup failed')
+            dessert = None
 
     drink_type = DrinkType.query.filter_by(name=selected_drink_type).first() if selected_drink_type else None
 
