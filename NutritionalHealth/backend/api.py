@@ -32,6 +32,21 @@ limiter = Limiter(key_func=get_remote_address)
 from models import db, User, FoodMenu, FoodCategory, FoodType, DrinkMenu, DrinkType, DessertMenu, Submission, Report, History
 from sqlalchemy import JSON as SA_JSON
 
+
+# Helper: get actual DB column names for a table via SQLAlchemy inspector.
+def db_table_columns(table_name):
+    try:
+        from sqlalchemy import inspect
+        insp = inspect(db.engine)
+        cols = [c['name'] for c in insp.get_columns(table_name)]
+        return cols
+    except Exception:
+        try:
+            # Fallback to model-declared columns if inspector fails
+            return list(getattr(DessertMenu, '__table__').columns.keys())
+        except Exception:
+            return []
+
 def create_app():
     app = Flask(__name__)
 
@@ -1232,13 +1247,13 @@ def get_desserts():
     try:
         # There is a dedicated DessertMenu table; column name may vary between
         # deployments (`name` vs `dessert_name`). Be defensive when reading.
-        cols = []
-        try:
-            cols = DessertMenu.__table__.columns.keys()
-        except Exception:
-            cols = []
+        cols = db_table_columns('dessert_menus')
 
-        order_col = DessertMenu.dessert_name if 'dessert_name' in cols else (DessertMenu.name if 'name' in cols else None)
+        order_col = None
+        if 'dessert_name' in cols:
+            order_col = DessertMenu.dessert_name
+        elif 'name' in cols:
+            order_col = DessertMenu.name
         q = DessertMenu.query
         if order_col is not None:
             q = q.order_by(order_col.asc())
@@ -1278,11 +1293,7 @@ def menu_info():
             # try exact match case-insensitive on DessertMenu first
             try:
                 # DessertMenu may expose `name` or `dessert_name`.
-                cols = []
-                try:
-                    cols = DessertMenu.__table__.columns.keys()
-                except Exception:
-                    cols = []
+                cols = db_table_columns('dessert_menus')
 
                 d = None
                 if 'dessert_name' in cols:
@@ -2445,10 +2456,7 @@ def save_selection():
         # others use `dessert_name`). Be defensive: inspect available
         # columns and query by the present column to avoid OperationalError.
         dessert = None
-        try:
-            cols = DessertMenu.__table__.columns.keys()
-        except Exception:
-            cols = []
+        cols = db_table_columns('dessert_menus')
 
         try:
             if 'name' in cols:
@@ -2456,16 +2464,20 @@ def save_selection():
             elif 'dessert_name' in cols:
                 dessert = DessertMenu.query.filter_by(dessert_name=selected_dessert).first()
             else:
-                # Fallback: try case-insensitive match on either attribute
-                try:
-                    dessert = DessertMenu.query.filter(func.lower(DessertMenu.name) == selected_dessert.lower()).first()
-                except Exception:
+                # Fallback: try case-insensitive match on either attribute (if present)
+                dessert = None
+                if 'name' in cols:
+                    try:
+                        dessert = DessertMenu.query.filter(func.lower(DessertMenu.name) == selected_dessert.lower()).first()
+                    except Exception:
+                        current_app.logger.exception('dessert lookup failed (name)')
+                if not dessert and 'dessert_name' in cols:
                     try:
                         dessert = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == selected_dessert.lower()).first()
                     except Exception:
-                        dessert = None
+                        current_app.logger.exception('dessert lookup failed (dessert_name)')
         except Exception:
-            current_app.logger.exception('dessert lookup failed')
+            current_app.logger.exception('dessert lookup failed (outer)')
             dessert = None
 
     drink_type = DrinkType.query.filter_by(name=selected_drink_type).first() if selected_drink_type else None
