@@ -350,6 +350,8 @@ class Calculate3Page extends StatelessWidget {
                     'recommended_total': totalRecommended,
                     'status': displayedStatus,
                     'description': generatedDescription,
+                    // human-readable summary to store in history for quick review
+                    'summary': '''มื้อ: ${displayedMeal}\nระยะเวลา: ${days} วัน\nรับ/วัน: ${intake} kcal\nควรรับ/วัน: ${recommendedPerDay} kcal\nรวมรับ: ${totalIntake} kcal\nรวมควรรับ: ${totalRecommended} kcal\nสถานะ: ${displayedStatus}\nคำอธิบาย: ${generatedDescription}\nเมนูที่เลือก: ${items.join(', ')}''',
                   };
 
                   // Save: if logged in, send flat payload to backend; otherwise persist guest

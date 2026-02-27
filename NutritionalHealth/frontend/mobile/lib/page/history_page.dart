@@ -461,6 +461,18 @@ class _HistoryPageState extends State<HistoryPage> {
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
+                                      const SizedBox(height: 8),
+                                      // Show human-readable summary if present
+                                      if (data.containsKey('summary') &&
+                                          data['summary'] is String &&
+                                          (data['summary'] as String).trim().isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 8),
+                                          child: Text(
+                                            data['summary'],
+                                            style: TextStyle(color: primaryGreen),
+                                          ),
+                                        ),
                                       const SizedBox(height: 10),
                                       buildInfoRow("อายุ", personal['age']),
                                       buildInfoRow("เพศ", personal['gender']),
