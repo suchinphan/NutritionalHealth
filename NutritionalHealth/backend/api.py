@@ -372,22 +372,34 @@ def get_dessert_menus_api():
         cols = {r[0] for r in db.session.execute(col_q, {"schema": schema}).fetchall()}
 
         result = []
-        if 'name' in cols:
-            rows = db.session.execute(text("SELECT id, name, calories FROM dessert_menus")).fetchall()
-            for r in rows:
-                result.append({
-                    'id': int(r[0]),
-                    'name': r[1],
-                    'calories': float(r[2]) if r[2] is not None else None
-                })
-        else:
-            rows = db.session.execute(text("SELECT id, dessert_name, calories FROM dessert_menus")).fetchall()
-            for r in rows:
-                result.append({
-                    'id': int(r[0]),
-                    'name': r[1],
-                    'calories': float(r[2]) if r[2] is not None else None
-                })
+            # Prefer model-backed query when possible, otherwise fall back to raw SQL
+            out = []
+            try:
+                if hasattr(DessertMenu, 'dessert_name') or hasattr(DessertMenu, 'name'):
+                    order_attr = getattr(DessertMenu, 'dessert_name', None) or getattr(DessertMenu, 'name', None)
+                    q = DessertMenu.query
+                    if order_attr is not None:
+                        q = q.order_by(order_attr.asc())
+                    items = q.limit(500).all()
+                    for d in items:
+                        out.append(getattr(d, 'dessert_name', getattr(d, 'name', '')))
+                    return jsonify({'items': out})
+            except Exception:
+                app.logger.exception('dessert model-backed fetch failed; falling back to raw SQL')
+            
+            # Fallback: raw SQL using actual DB column names
+            try:
+                col = 'dessert_name' if 'dessert_name' in cols else ('name' if 'name' in cols else None)
+                if col is None:
+                    return jsonify({'items': []})
+                sql = text(f"SELECT {col} FROM dessert_menus ORDER BY {col} ASC LIMIT 500")
+                rows = db.session.execute(sql).fetchall()
+                for r in rows:
+                    out.append(r[0] if r and len(r) > 0 else '')
+                return jsonify({'items': out})
+            except Exception:
+                app.logger.exception('Failed to fetch desserts')
+                return jsonify({'items': []}), 500
 
         return jsonify(result)
     except Exception:
@@ -1294,24 +1306,38 @@ def menu_info():
             name = n.strip()
             # try exact match case-insensitive on DessertMenu first
             try:
-                # DessertMenu may expose `name` or `dessert_name`.
                 cols = db_table_columns('dessert_menus')
 
+                # Prefer model-backed lookup if mapped attributes exist
                 d = None
-                if 'dessert_name' in cols:
-                    try:
+                try:
+                    if hasattr(DessertMenu, 'dessert_name'):
                         d = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == name.lower()).first()
-                    except Exception:
-                        app.logger.exception('dessert lookup failed (dessert_name)')
-                if not d and 'name' in cols:
-                    try:
+                    elif hasattr(DessertMenu, 'name'):
                         d = DessertMenu.query.filter(func.lower(DessertMenu.name) == name.lower()).first()
-                    except Exception:
-                        app.logger.exception('dessert lookup failed (name)')
+                except Exception:
+                    app.logger.exception('dessert lookup failed (model-backed)')
 
                 if d:
                     out.append({'name': name, 'kcal': getattr(d, 'calories', None)})
                     continue
+
+                # Fallback: raw SQL using actual DB column names
+                try:
+                    if 'dessert_name' in cols:
+                        sql = text('SELECT calories FROM dessert_menus WHERE lower(dessert_name)=:n LIMIT 1')
+                    elif 'name' in cols:
+                        sql = text('SELECT calories FROM dessert_menus WHERE lower(name)=:n LIMIT 1')
+                    else:
+                        sql = None
+
+                    if sql is not None:
+                        row = db.session.execute(sql, {'n': name.lower()}).fetchone()
+                        if row and row[0] is not None:
+                            out.append({'name': name, 'kcal': float(row[0])})
+                            continue
+                except Exception:
+                    app.logger.exception('dessert lookup failed (raw-sql)')
 
             except Exception:
                 app.logger.exception('dessert lookup failed (outer)')
@@ -2461,23 +2487,37 @@ def save_selection():
         cols = db_table_columns('dessert_menus')
 
         try:
-            if 'name' in cols:
-                dessert = DessertMenu.query.filter_by(name=selected_dessert).first()
-            elif 'dessert_name' in cols:
-                dessert = DessertMenu.query.filter_by(dessert_name=selected_dessert).first()
-            else:
-                # Fallback: try case-insensitive match on either attribute (if present)
-                dessert = None
-                if 'name' in cols:
-                    try:
-                        dessert = DessertMenu.query.filter(func.lower(DessertMenu.name) == selected_dessert.lower()).first()
-                    except Exception:
-                        current_app.logger.exception('dessert lookup failed (name)')
-                if not dessert and 'dessert_name' in cols:
-                    try:
-                        dessert = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == selected_dessert.lower()).first()
-                    except Exception:
-                        current_app.logger.exception('dessert lookup failed (dessert_name)')
+            # Try model-backed attribute lookup first if attribute exists
+            if hasattr(DessertMenu, 'dessert_name'):
+                try:
+                    dessert = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == selected_dessert.lower()).first()
+                except Exception:
+                    current_app.logger.exception('dessert lookup failed (model dessert_name)')
+            elif hasattr(DessertMenu, 'name'):
+                try:
+                    dessert = DessertMenu.query.filter(func.lower(DessertMenu.name) == selected_dessert.lower()).first()
+                except Exception:
+                    current_app.logger.exception('dessert lookup failed (model name)')
+
+            # If model attribute not available or lookup failed, try raw SQL to find id
+            if not dessert:
+                try:
+                    if 'dessert_name' in cols:
+                        sql = text('SELECT id FROM dessert_menus WHERE lower(dessert_name)=:n LIMIT 1')
+                    elif 'name' in cols:
+                        sql = text('SELECT id FROM dessert_menus WHERE lower(name)=:n LIMIT 1')
+                    else:
+                        sql = None
+
+                    if sql is not None:
+                        row = db.session.execute(sql, {'n': selected_dessert.lower()}).fetchone()
+                        if row and row[0] is not None:
+                            try:
+                                dessert = DessertMenu.query.get(int(row[0]))
+                            except Exception:
+                                dessert = None
+                except Exception:
+                    current_app.logger.exception('dessert lookup failed (raw-sql)')
         except Exception:
             current_app.logger.exception('dessert lookup failed (outer)')
             dessert = None
