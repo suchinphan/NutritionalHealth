@@ -29,7 +29,7 @@ DB_PATH = os.environ.get('DB_PATH', os.path.join(BASE_DIR, 'app.db'))
 limiter = Limiter(key_func=get_remote_address)
 
 # Import DB and models
-from models import db, User, FoodMenu, FoodCategory, FoodType, DrinkMenu, DrinkType, DessertMenu, Submission, Report, History
+from models import db, User, UserSelection, FoodMenu, FoodCategory, FoodType, DrinkMenu, DrinkType, DessertMenu, Submission, Report, History
 from sqlalchemy import JSON as SA_JSON
 
 
