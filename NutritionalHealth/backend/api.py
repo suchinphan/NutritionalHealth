@@ -371,37 +371,31 @@ def get_dessert_menus_api():
         col_q = text("SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema=:schema AND table_name='dessert_menus'")
         cols = {r[0] for r in db.session.execute(col_q, {"schema": schema}).fetchall()}
 
-        result = []
-            # Prefer model-backed query when possible, otherwise fall back to raw SQL
-            out = []
-            try:
-                if hasattr(DessertMenu, 'dessert_name') or hasattr(DessertMenu, 'name'):
-                    order_attr = getattr(DessertMenu, 'dessert_name', None) or getattr(DessertMenu, 'name', None)
-                    q = DessertMenu.query
-                    if order_attr is not None:
-                        q = q.order_by(order_attr.asc())
-                    items = q.limit(500).all()
-                    for d in items:
-                        out.append(getattr(d, 'dessert_name', getattr(d, 'name', '')))
-                    return jsonify({'items': out})
-            except Exception:
-                app.logger.exception('dessert model-backed fetch failed; falling back to raw SQL')
-            
-            # Fallback: raw SQL using actual DB column names
-            try:
-                col = 'dessert_name' if 'dessert_name' in cols else ('name' if 'name' in cols else None)
-                if col is None:
-                    return jsonify({'items': []})
-                sql = text(f"SELECT {col} FROM dessert_menus ORDER BY {col} ASC LIMIT 500")
-                rows = db.session.execute(sql).fetchall()
-                for r in rows:
-                    out.append(r[0] if r and len(r) > 0 else '')
+        # Prefer model-backed query when possible, otherwise fall back to raw SQL
+        try:
+            if hasattr(DessertMenu, 'dessert_name') or hasattr(DessertMenu, 'name'):
+                order_attr = getattr(DessertMenu, 'dessert_name', None) or getattr(DessertMenu, 'name', None)
+                q = DessertMenu.query
+                if order_attr is not None:
+                    q = q.order_by(order_attr.asc())
+                items = q.limit(500).all()
+                out = [getattr(d, 'dessert_name', getattr(d, 'name', '')) for d in items]
                 return jsonify({'items': out})
-            except Exception:
-                app.logger.exception('Failed to fetch desserts')
-                return jsonify({'items': []}), 500
+        except Exception:
+            app.logger.exception('dessert model-backed fetch failed; falling back to raw SQL')
 
-        return jsonify(result)
+        # Fallback: raw SQL using actual DB column names
+        try:
+            col = 'dessert_name' if 'dessert_name' in cols else ('name' if 'name' in cols else None)
+            if col is None:
+                return jsonify({'items': []})
+            sql = text(f"SELECT {col} FROM dessert_menus ORDER BY {col} ASC LIMIT 500")
+            rows = db.session.execute(sql).fetchall()
+            out = [r[0] if r and len(r) > 0 else '' for r in rows]
+            return jsonify({'items': out})
+        except Exception:
+            app.logger.exception('Failed to fetch desserts')
+            return jsonify({'items': []}), 500
     except Exception:
         app.logger.exception('get_dessert_menus_api error')
         return jsonify({'error': 'internal'}), 500
