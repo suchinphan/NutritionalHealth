@@ -1221,9 +1221,24 @@ def get_drink_menus():
 def get_desserts():
     """Return desserts list. Optionally allow category filter via ?category=."""
     try:
-        # There is a dedicated DessertMenu table; simply return names (optionally could filter by category later)
-        items = DessertMenu.query.order_by(DessertMenu.dessert_name.asc()).limit(500).all()
-        return jsonify({'items': [d.name for d in items]})
+        # There is a dedicated DessertMenu table; column name may vary between
+        # deployments (`name` vs `dessert_name`). Be defensive when reading.
+        cols = []
+        try:
+            cols = DessertMenu.__table__.columns.keys()
+        except Exception:
+            cols = []
+
+        order_col = DessertMenu.dessert_name if 'dessert_name' in cols else (DessertMenu.name if 'name' in cols else None)
+        q = DessertMenu.query
+        if order_col is not None:
+            q = q.order_by(order_col.asc())
+
+        items = q.limit(500).all()
+        out = []
+        for d in items:
+            out.append(getattr(d, 'name', getattr(d, 'dessert_name', '')))
+        return jsonify({'items': out})
     except Exception:
         app.logger.exception('Failed to fetch desserts')
         return jsonify({'items': []}), 500
@@ -1253,12 +1268,28 @@ def menu_info():
             name = n.strip()
             # try exact match case-insensitive on DessertMenu first
             try:
-                d = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == name.lower()).first()
+                # DessertMenu may expose `name` or `dessert_name`.
+                cols = []
+                try:
+                    cols = DessertMenu.__table__.columns.keys()
+                except Exception:
+                    cols = []
+
+                d = None
+                if 'dessert_name' in cols:
+                    try:
+                        d = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == name.lower()).first()
+                    except Exception:
+                        app.logger.exception('dessert lookup failed (dessert_name)')
+                if not d and 'name' in cols:
+                    try:
+                        d = DessertMenu.query.filter(func.lower(DessertMenu.name) == name.lower()).first()
+                    except Exception:
+                        app.logger.exception('dessert lookup failed (name)')
+
                 if d:
-                    out.append({'name': name, 'kcal': d.calories})
+                    out.append({'name': name, 'kcal': getattr(d, 'calories', None)})
                     continue
-            except Exception:
-                app.logger.exception('dessert lookup failed')
 
             try:
                 f = FoodMenu.query.filter(func.lower(FoodMenu.name) == name.lower()).first()
@@ -2339,6 +2370,25 @@ def save_selection():
     menu_id_payload = data.get('menu_id')
     dessert_menu_id_payload = data.get('dessert_menu_id')
     drink_menu_id_payload = data.get('drink_menu_id')
+
+    # Normalize placeholder values often sent from frontend (e.g. '-' or empty)
+    def _normalize_name(x):
+        try:
+            if x is None:
+                return None
+            s = str(x).strip()
+            if s == '' or s == '-' or s.lower() == 'null':
+                return None
+            return s
+        except Exception:
+            return None
+
+    selected_type = _normalize_name(selected_type)
+    selected_category = _normalize_name(selected_category)
+    selected_menu = _normalize_name(selected_menu)
+    selected_dessert = _normalize_name(selected_dessert)
+    selected_drink_type = _normalize_name(selected_drink_type)
+    selected_drink_menu = _normalize_name(selected_drink_menu)
 
     meal = (data.get("meal") or "").strip()
     duration = data.get("duration")
