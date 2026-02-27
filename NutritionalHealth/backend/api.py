@@ -2578,10 +2578,19 @@ def save_selection():
             "selection_id": selection.id
         }), 201
 
-    except Exception:
+    except Exception as e:
         db.session.rollback()
-        app.logger.exception("Save selection failed")
-        return jsonify({"error": "database error"}), 500
+        current_app.logger.exception('Save selection failed: %s', e)
+        import traceback
+        tb = traceback.format_exc()
+        if app.debug:
+            return jsonify({
+                "error": "database error",
+                "exception": str(e),
+                "trace": tb
+            }), 500
+        else:
+            return jsonify({"error": "database error"}), 500
 
 @app.route('/db-info', methods=['GET'])
 def db_info():
