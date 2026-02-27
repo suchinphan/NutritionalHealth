@@ -432,18 +432,29 @@ class _HistoryPageState extends State<HistoryPage> {
                             itemCount: _entries.length,
                             itemBuilder: (ctx, i) {
                               final entry = _entries[i];
-                              final data =
-                                  entry['data'] as Map<String, dynamic>? ?? {};
+                                final data = entry['data'] as Map<String, dynamic>? ?? {};
 
-                              Map<String, dynamic> personal =
-                                  data.containsKey('personal')
-                                  ? parseToMap(data['personal'])
-                                  : data;
+                                // Normalize personal and calories maps (may be nested or encoded)
+                                Map<String, dynamic> personal =
+                                  data.containsKey('personal') ? parseToMap(data['personal']) : parseToMap(data['personal'] ?? data['personal_data'] ?? data['user'] ?? {});
 
-                              Map<String, dynamic> calories =
-                                  data.containsKey('calories')
+                                Map<String, dynamic> calories = data.containsKey('calories')
                                   ? parseToMap(data['calories'])
-                                  : {};
+                                  : parseToMap(data['calories'] ?? data['calorie'] ?? {'intake_per_day': data['intake_per_day'], 'total_intake': data['total_intake'], 'recommended_per_day': data['recommended_per_day']});
+
+                                // Extract selection/display fields with fallbacks to handle different saved shapes
+                                final foodType = (data['selectedType'] ?? data['selected_type'] ?? data['food_type'] ?? (data['selection'] is Map ? data['selection']['food_type'] : null))?.toString() ?? '-';
+                                final category = (data['selectedCategory'] ?? data['selected_category'] ?? data['category'] ?? (data['selection'] is Map ? data['selection']['category'] : null))?.toString() ?? '-';
+                                final selectedMenus = (data['selectedMenu'] ?? data['selected_menus'] ?? (data['selection'] is Map ? data['selection']['selected_menus'] : null)) ?? (data['selectedMenu'] is String ? data['selectedMenu'] : null);
+                                final selectedMenusText = _joinList(selectedMenus);
+                                final menusByCategory = _joinList(data['menus'] ?? (data['selection'] is Map ? data['selection']['menu_options'] : null));
+                                final drinkOptions = _joinList(data['drink_options'] ?? (data['selection'] is Map ? data['selection']['drink_options'] : null));
+                                final selectedDrink = (data['selectedDrinkMenu'] ?? data['selected_drink'] ?? data['selectedDrink'] ?? (data['selection'] is Map ? data['selection']['selected_drink'] : null)) ?? '-';
+                                final mealLabel = (data['meal'] ?? (data['selection'] is Map ? data['selection']['meal'] : null) ?? '-')?.toString() ?? '-';
+                                final durationVal = (data['duration'] ?? (data['selection'] is Map ? data['selection']['duration'] : null) ?? '-')?.toString() ?? '-';
+                                final bmiStatus = _computeBMIStatus(personal);
+                                final totalCalories = (data['total_intake'] ?? calories['total_for_duration'] ?? calories['total'] ?? data['total'] ?? calories['intake_total'])?.toString() ?? _getCaloriesForDuration(calories, data['duration'] ?? (data['selection'] is Map ? data['selection']['duration'] : null));
+                                final recText = (data['recommendation'] ?? data['advice'] ?? data['notes'] ?? calories['advice'])?.toString() ?? '-';
 
                               return Card(
                                 color: Colors.grey.shade200,
@@ -474,116 +485,33 @@ class _HistoryPageState extends State<HistoryPage> {
                                           ),
                                         ),
                                       const SizedBox(height: 10),
-                                      buildInfoRow("อายุ", personal['age']),
                                       buildInfoRow("เพศ", personal['gender']),
-                                      buildInfoRow(
-                                        "น้ำหนัก",
-                                        personal['weight'],
-                                      ),
-                                      buildInfoRow(
-                                        "ส่วนสูง",
-                                        personal['height'],
-                                      ),
-                                      buildInfoRow(
-                                        "รับ/วัน",
-                                        calories['intake_per_day'],
-                                      ),
-                                      buildInfoRow(
-                                        "ควรรับ/วัน",
-                                        calories['recommended_per_day'],
-                                      ),
+                                      buildInfoRow("อายุ", personal['age']),
+                                      buildInfoRow("น้ำหนัก (กก.)", personal['weight']),
+                                      buildInfoRow("ส่วนสูง (ซม.)", personal['height']),
+                                      buildInfoRow("รับ/วัน", calories['intake_per_day'] ?? data['intake_per_day']),
+                                      buildInfoRow("ควรรับ/วัน", calories['recommended_per_day'] ?? data['recommended_per_day']),
                                       const SizedBox(height: 6),
-                                      // Additional fields
-                                      buildInfoRow(
-                                        "ประเภทอาหาร",
-                                        data.containsKey('selection')
-                                            ? (data['selection'] is Map
-                                                  ? (data['selection']['food_type'] ??
-                                                        data['food_type'])
-                                                  : data['food_type'])
-                                            : (data['food_type'] ?? '-'),
-                                      ),
-                                      buildInfoRow(
-                                        "หมวดที่เลือก",
-                                        data.containsKey('selection')
-                                            ? (data['selection'] is Map
-                                                  ? (data['selection']['category'] ??
-                                                        '-')
-                                                  : '-')
-                                            : '-',
+                                      // Selection details
+                                      buildInfoRow("ประเภทอาหาร", foodType),
+                                      buildInfoRow("หมวดที่เลือก", category),
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 6),
+                                        child: Text("เมนูตามหมวด: $menusByCategory", style: TextStyle(color: primaryGreen)),
                                       ),
                                       Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 6,
-                                        ),
-                                        child: Text(
-                                          "เมนูตามหมวด: ${_joinList(data['menus'] ?? (data['selection'] is Map ? data['selection']['menu_options'] : null))}",
-                                          style: TextStyle(color: primaryGreen),
-                                        ),
+                                        padding: const EdgeInsets.only(bottom: 6),
+                                        child: Text("เมนูที่เลือก: $selectedMenusText", style: TextStyle(color: primaryGreen)),
                                       ),
+                                      buildInfoRow("เมนูเครื่องดื่ม", drinkOptions),
+                                      buildInfoRow("เครื่องดื่มที่เลือก", selectedDrink),
+                                      buildInfoRow("มื้ออาหาร", mealLabel),
+                                      buildInfoRow("ระยะเวลา (วัน)", durationVal),
+                                      buildInfoRow("สถานะ (BMI)", bmiStatus),
+                                      buildInfoRow("แคลอรีรวม (ช่วงที่เลือก)", totalCalories),
                                       Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 6,
-                                        ),
-                                        child: Text(
-                                          "เมนูที่เลือก: ${_joinList(data['selected_menus'] ?? (data['selection'] is Map ? data['selection']['selected_menus'] : null))}",
-                                          style: TextStyle(color: primaryGreen),
-                                        ),
-                                      ),
-                                      buildInfoRow(
-                                        "เมนูเครื่องดื่ม",
-                                        _joinList(
-                                          data['drink_options'] ??
-                                              (data['selection'] is Map
-                                                  ? data['selection']['drink_options']
-                                                  : null),
-                                        ),
-                                      ),
-                                      buildInfoRow(
-                                        "เครื่องดื่มที่เลือก",
-                                        _joinList(
-                                          data['selected_drink'] ??
-                                              (data['selection'] is Map
-                                                  ? data['selection']['selected_drink']
-                                                  : null),
-                                        ),
-                                      ),
-                                      buildInfoRow(
-                                        "มื้ออาหาร",
-                                        data['meal'] ??
-                                            (data['selection'] is Map
-                                                ? data['selection']['meal']
-                                                : '-'),
-                                      ),
-                                      buildInfoRow(
-                                        "ระยะเวลา (วัน)",
-                                        data['duration'] ??
-                                            (data['selection'] is Map
-                                                ? data['selection']['duration']
-                                                : '-'),
-                                      ),
-                                      buildInfoRow(
-                                        "สถานะ (BMI)",
-                                        _computeBMIStatus(personal),
-                                      ),
-                                      buildInfoRow(
-                                        "แคลอรีรวม (ช่วงที่เลือก)",
-                                        _getCaloriesForDuration(
-                                          calories,
-                                          data['duration'] ??
-                                              (data['selection'] is Map
-                                                  ? data['selection']['duration']
-                                                  : null),
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 6,
-                                        ),
-                                        child: Text(
-                                          "คำแนะนำ: ${data['recommendation'] ?? data['advice'] ?? data['notes'] ?? calories['advice'] ?? '-'}",
-                                          style: TextStyle(color: primaryGreen),
-                                        ),
+                                        padding: const EdgeInsets.only(bottom: 6),
+                                        child: Text("คำแนะนำ: $recText", style: TextStyle(color: primaryGreen)),
                                       ),
                                       Padding(
                                         padding: const EdgeInsets.only(
