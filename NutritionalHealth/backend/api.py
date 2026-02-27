@@ -746,6 +746,8 @@ def register():
     except Exception:
         current_app.logger.exception('quick save-selection via history failed')
 
+    # register logic continues
+
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
     confirm = data.get('confirm_password')
