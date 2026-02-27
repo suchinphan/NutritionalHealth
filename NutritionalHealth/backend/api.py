@@ -722,6 +722,15 @@ def register():
 
     data = request.get_json(silent=True) or {}
 
+    # QUICK PATH: persist the raw payload as a History record immediately.
+    # This provides a fast, low-risk fix so the frontend can see entries
+    # in /history while a fuller UserSelection implementation is completed.
+    try:
+        h = save_history_record(user.id, data)
+        return jsonify({'status': 'saved', 'history_id': h.id}), 201
+    except Exception:
+        current_app.logger.exception('quick save-selection via history failed')
+
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
     confirm = data.get('confirm_password')
@@ -1290,6 +1299,9 @@ def menu_info():
                 if d:
                     out.append({'name': name, 'kcal': getattr(d, 'calories', None)})
                     continue
+
+            except Exception:
+                app.logger.exception('dessert lookup failed (outer)')
 
             try:
                 f = FoodMenu.query.filter(func.lower(FoodMenu.name) == name.lower()).first()
