@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, kDebugMode;
 import 'show_food_items_page.dart';
+import 'history_page.dart';
 
 class Calculate3Page extends StatelessWidget {
   final String foodName;
@@ -370,15 +371,29 @@ class Calculate3Page extends StatelessWidget {
                     saved = false;
                   }
 
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ShowFoodItemsPage(
-                        items: items,
-                        calories: totalIntake.toString(),
-                      ),
-                    ),
-                  );
+                  if (saved) {
+                    // Inform the user and navigate to History so they can verify
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('บันทึกสำเร็จ — ไปที่ประวัติ')));
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const HistoryPage()),
+                      );
+                    }
+                  } else {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('บันทึกไม่สำเร็จ — แสดงผลอย่างเดียว')));
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ShowFoodItemsPage(
+                            items: items,
+                            calories: totalIntake.toString(),
+                          ),
+                        ),
+                      );
+                    }
+                  }
                 },
                 child: const Text(
                   'คำนวณ',
