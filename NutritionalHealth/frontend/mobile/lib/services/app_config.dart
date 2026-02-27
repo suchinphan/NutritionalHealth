@@ -1,4 +1,10 @@
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform, kDebugMode, kReleaseMode;
+import 'package:flutter/foundation.dart'
+    show
+        kIsWeb,
+        defaultTargetPlatform,
+        TargetPlatform,
+        kDebugMode,
+        kReleaseMode;
 
 /// Central API base URL configuration for the mobile app.
 ///
@@ -13,6 +19,7 @@ String getApiBase() {
 
   // Debug / profile: map to emulator/local addresses for convenience.
   if (kIsWeb) return 'http://127.0.0.1:5000';
-  if (defaultTargetPlatform == TargetPlatform.android) return 'http://10.0.2.2:5000';
+  if (defaultTargetPlatform == TargetPlatform.android)
+    return 'http://10.0.2.2:5000';
   return 'http://127.0.0.1:5000';
 }

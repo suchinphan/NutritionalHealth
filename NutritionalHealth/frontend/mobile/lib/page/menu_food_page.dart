@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 // removed import of main.dart to avoid circular import
-import '../services/csv_loader.dart';
+import '../services/api_loader.dart';
 import '../services/auth_service.dart';
 
 class MenuFoodPage extends StatefulWidget {
@@ -13,16 +13,25 @@ class MenuFoodPage extends StatefulWidget {
 class _MenuFoodPageState extends State<MenuFoodPage> {
   final Color primaryGreen = const Color(0xFF00C700);
   // รายการตัวเลือกสำหรับ dropdown (will try to load from CSV)
-  List<String> _types = ['โปรตีน', 'ผักและผลไม้', 'คาร์โบไฮเดรต', 'เครื่องดื่ม'];
+  List<String> _types = [
+    'โปรตีน',
+    'ผักและผลไม้',
+    'คาร์โบไฮเดรต',
+    'เครื่องดื่ม',
+  ];
   final List<String> _energies = ['ต่ำ', 'ปานกลาง', 'สูง'];
   // energy ranges (guideline): ต่ำ <200 kcal, ปานกลาง 200-500 kcal, สูง >500 kcal
 
   // app-level categories used to filter types/menus
-  final List<String> _appCategories = ['เครื่องดื่มเพื่อสุขภาพ', 'เครื่องดื่มลดน้ำหนัก', 'เครื่องดื่มบำรุงร่างกาย / เพิ่มพลังงาน'];
+  final List<String> _appCategories = [
+    'เครื่องดื่มเพื่อสุขภาพ',
+    'เครื่องดื่มลดน้ำหนัก',
+    'เครื่องดื่มบำรุงร่างกาย / เพิ่มพลังงาน',
+  ];
   String? _selectedAppCategory;
 
-  // hierarchy built from CSVs: appCategory -> typeKey -> set(items)
-  final Map<String, Map<String, Set<String>>> _hierarchy = {};
+  // hierarchy built from CSVs: appCategory -> typeKey -> subCategoryKey -> set(items)
+  final Map<String, Map<String, Map<String, Set<String>>>> _hierarchy = {};
 
   // example items (one per main food category) loaded from CSV
   final Map<String, String> _examples = {
@@ -40,26 +49,35 @@ class _MenuFoodPageState extends State<MenuFoodPage> {
 
   Future<void> _loadCsvOptions() async {
     try {
-      final protein = await CsvLoader.loadProteinMenus();
-      final veg = await CsvLoader.loadVegetableMenus();
-      final carb = await CsvLoader.loadCarbMenus();
-      final desserts = await CsvLoader.loadDessertMenus();
-      final healthy = await CsvLoader.loadHealthyDrinks();
-      final weightloss = await CsvLoader.loadWeightLossDrinks();
-      final energy = await CsvLoader.loadEnergyDrinks();
-
-      final Map<String, Map<String, Set<String>>> h = {};
+      final protein = await ApiLoader.loadProteinMenus();
+      final veg = await ApiLoader.loadVegetableMenus();
+      final carb = await ApiLoader.loadCarbMenus();
+      final desserts = await ApiLoader.loadDessertMenus();
+      final healthy = await ApiLoader.loadHealthyDrinks();
+      final weightloss = await ApiLoader.loadWeightLossDrinks();
+      final energy = await ApiLoader.loadEnergyDrinks();
+      final Map<String, Map<String, Map<String, Set<String>>>> h = {};
       h['เมนูหลัก'] = {
-        'เมนูโปรตีน': protein.toSet(),
-        'เมนูผักและผลไม้': veg.toSet(),
-        'เมนูคาร์โบไฮเดรต': carb.toSet(),
+        'เมนูโปรตีน': protein,
+        'เมนูผักและผลไม้': veg,
+        'เมนูคาร์โบไฮเดรต': carb,
       };
       h['ของหวาน'] = {
-        'ของหวาน': desserts.toSet(),
+        'ของหวาน': {'รายการของหวาน': desserts.toSet()},
       };
-      h['เครื่องดื่มเพื่อสุขภาพ'] = {'เครื่องดื่มเพื่อสุขภาพ': healthy.toSet()};
-      h['เครื่องดื่มลดน้ำหนัก'] = {'เครื่องดื่มลดน้ำหนัก': weightloss.toSet()};
-      h['เครื่องดื่มบำรุงร่างกาย / เพิ่มพลังงาน'] = {'เครื่องดื่มเพิ่มพลังงาน': energy.toSet()};
+      h['เครื่องดื่ม'] = {
+        'เครื่องดื่มเพื่อสุขภาพ': {'รายการ': healthy.toSet()},
+        'เครื่องดื่มลดน้ำหนัก': {'รายการ': weightloss.toSet()},
+        'เครื่องดื่มเพิ่มพลังงาน': {'รายการ': energy.toSet()},
+      };
+
+      String _pickExample(Map<String, Set<String>>? m) {
+        if (m == null) return '';
+        for (var s in m.values) {
+          if (s.isNotEmpty) return s.first;
+        }
+        return '';
+      }
 
       setState(() {
         _hierarchy.clear();
@@ -69,10 +87,19 @@ class _MenuFoodPageState extends State<MenuFoodPage> {
           allTypes.addAll(m.keys);
         }
         if (allTypes.isNotEmpty) _types = allTypes.take(12).toList();
-        _examples['โปรตีน'] = protein.isNotEmpty ? protein.first : '';
-        _examples['ผักและผลไม้'] = veg.isNotEmpty ? veg.first : '';
-        _examples['คาร์โบไฮเดรต'] = carb.isNotEmpty ? carb.first : '';
-        _examples['เครื่องดื่ม'] = (healthy.isNotEmpty ? healthy.first : (energy.isNotEmpty ? energy.first : ''));
+        _examples['โปรตีน'] = _pickExample(h['เมนูหลัก']?['เมนูโปรตีน']);
+        _examples['ผักและผลไม้'] = _pickExample(
+          h['เมนูหลัก']?['เมนูผักและผลไม้'],
+        );
+        _examples['คาร์โบไฮเดรต'] = _pickExample(
+          h['เมนูหลัก']?['เมนูคาร์โบไฮเดรต'],
+        );
+        _examples['เครื่องดื่ม'] =
+            _pickExample(h['เครื่องดื่ม']?['เครื่องดื่มเพื่อสุขภาพ']) != ''
+            ? _pickExample(h['เครื่องดื่ม']?['เครื่องดื่มเพื่อสุขภาพ'])
+            : (_pickExample(h['เครื่องดื่ม']?['เครื่องดื่มเพิ่มพลังงาน']) != ''
+                  ? _pickExample(h['เครื่องดื่ม']?['เครื่องดื่มเพิ่มพลังงาน'])
+                  : '');
       });
     } catch (_) {
       // keep defaults on failure
@@ -90,7 +117,10 @@ class _MenuFoodPageState extends State<MenuFoodPage> {
     super.dispose();
   }
 
-  Widget _label(String text) => Text(text, style: TextStyle(color: primaryGreen, fontWeight: FontWeight.w600));
+  Widget _label(String text) => Text(
+    text,
+    style: TextStyle(color: primaryGreen, fontWeight: FontWeight.w600),
+  );
 
   Widget _greyField(TextEditingController ctrl, String hint) {
     return Container(
@@ -124,15 +154,41 @@ class _MenuFoodPageState extends State<MenuFoodPage> {
       child: DropdownButtonFormField<String>(
         isExpanded: true,
         initialValue: (value != null && value.isNotEmpty) ? value : null,
-        hint: Text(hint, style: TextStyle(color: Colors.grey[600]), overflow: TextOverflow.ellipsis, maxLines: 1),
-        decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
-        items: (value != null && value.isNotEmpty) ? [DropdownMenuItem(value: value, child: Text(value, style: TextStyle(color: primaryGreen), overflow: TextOverflow.ellipsis, maxLines: 1))] : [],
+        hint: Text(
+          hint,
+          style: TextStyle(color: Colors.grey[600]),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
+        ),
+        items: (value != null && value.isNotEmpty)
+            ? [
+                DropdownMenuItem(
+                  value: value,
+                  child: Text(
+                    value,
+                    style: TextStyle(color: primaryGreen),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ]
+            : [],
         onChanged: null,
       ),
     );
   }
 
-  Widget _dropdownField(String hint, String? value, List<String> items, ValueChanged<String?>? onChanged) {
+  Widget _dropdownField(
+    String hint,
+    String? value,
+    List<String> items,
+    ValueChanged<String?>? onChanged,
+  ) {
     return Container(
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -143,9 +199,30 @@ class _MenuFoodPageState extends State<MenuFoodPage> {
       child: DropdownButtonFormField<String>(
         isExpanded: true,
         initialValue: value,
-        hint: Text(hint, style: TextStyle(color: Colors.grey[600]), overflow: TextOverflow.ellipsis, maxLines: 1),
-        decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
-        items: items.map((e) => DropdownMenuItem(value: e, child: Text(e, style: TextStyle(color: primaryGreen), overflow: TextOverflow.ellipsis, maxLines: 1))).toList(),
+        hint: Text(
+          hint,
+          style: TextStyle(color: Colors.grey[600]),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
+        ),
+        items: items
+            .map(
+              (e) => DropdownMenuItem(
+                value: e,
+                child: Text(
+                  e,
+                  style: TextStyle(color: primaryGreen),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            )
+            .toList(),
         onChanged: AuthService().isGuestLocked ? null : onChanged,
       ),
     );
@@ -168,17 +245,32 @@ class _MenuFoodPageState extends State<MenuFoodPage> {
                     child: Icon(Icons.arrow_back_ios, color: primaryGreen),
                   ),
                   const Expanded(child: SizedBox()),
-                  Text('เมนูอาหาร', style: TextStyle(color: primaryGreen, fontSize: 18, fontWeight: FontWeight.w700)),
+                  Text(
+                    'เมนูอาหาร',
+                    style: TextStyle(
+                      color: primaryGreen,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   const Expanded(child: SizedBox()),
-                  Builder(builder: (_) {
-                    final auth = AuthService();
-                    String idText = 'Guest';
-                    if (auth.isLoggedIn && auth.user != null) {
-                      final uname = auth.user!['username'] ?? auth.user!['name'] ?? (auth.user!['id']?.toString() ?? '—');
-                      idText = uname.toString();
-                    }
-                    return Text(idText, style: TextStyle(color: primaryGreen));
-                  }),
+                  Builder(
+                    builder: (_) {
+                      final auth = AuthService();
+                      String idText = 'Guest';
+                      if (auth.isLoggedIn && auth.user != null) {
+                        final uname =
+                            auth.user!['username'] ??
+                            auth.user!['name'] ??
+                            (auth.user!['id']?.toString() ?? '—');
+                        idText = uname.toString();
+                      }
+                      return Text(
+                        idText,
+                        style: TextStyle(color: primaryGreen),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -191,29 +283,51 @@ class _MenuFoodPageState extends State<MenuFoodPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('เมนูอาหาร — ตัวอย่างการกรอกข้อมูล', style: TextStyle(color: primaryGreen, fontSize: 20, fontWeight: FontWeight.w700)),
+                      Text(
+                        'เมนูอาหาร — ตัวอย่างการกรอกข้อมูล',
+                        style: TextStyle(
+                          color: primaryGreen,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       const SizedBox(height: 8),
-                      Text('หน้านี้เป็นแค่ "ตัวอย่างให้ดู" ผู้ใช้ไม่สามารถแก้ไขหรือบันทึกข้อมูลจริงได้', style: TextStyle(color: Colors.black54)),
+                      Text(
+                        'หน้านี้เป็นแค่ "ตัวอย่างให้ดู" ผู้ใช้ไม่สามารถแก้ไขหรือบันทึกข้อมูลจริงได้',
+                        style: TextStyle(color: Colors.black54),
+                      ),
                       const SizedBox(height: 14),
 
                       _label('ตัวอย่าง เมนูโปรตีน'),
                       const SizedBox(height: 8),
-                      _disabledDropdownField('ตัวอย่างเมนูโปรตีน', _examples['โปรตีน']),
+                      _disabledDropdownField(
+                        'ตัวอย่างเมนูโปรตีน',
+                        _examples['โปรตีน'],
+                      ),
                       const SizedBox(height: 14),
 
                       _label('ตัวอย่าง เมนูผักและผลไม้'),
                       const SizedBox(height: 8),
-                      _disabledDropdownField('ตัวอย่างผักและผลไม้', _examples['ผักและผลไม้']),
+                      _disabledDropdownField(
+                        'ตัวอย่างผักและผลไม้',
+                        _examples['ผักและผลไม้'],
+                      ),
                       const SizedBox(height: 14),
 
                       _label('ตัวอย่าง เมนูคาร์โบไฮเดรต'),
                       const SizedBox(height: 8),
-                      _disabledDropdownField('ตัวอย่างคาร์โบไฮเดรต', _examples['คาร์โบไฮเดรต']),
+                      _disabledDropdownField(
+                        'ตัวอย่างคาร์โบไฮเดรต',
+                        _examples['คาร์โบไฮเดรต'],
+                      ),
                       const SizedBox(height: 14),
 
                       _label('ตัวอย่าง เมนูเครื่องดื่ม'),
                       const SizedBox(height: 8),
-                      _disabledDropdownField('ตัวอย่างเครื่องดื่ม', _examples['เครื่องดื่ม']),
+                      _disabledDropdownField(
+                        'ตัวอย่างเครื่องดื่ม',
+                        _examples['เครื่องดื่ม'],
+                      ),
                       const SizedBox(height: 28),
 
                       SizedBox(
@@ -221,14 +335,21 @@ class _MenuFoodPageState extends State<MenuFoodPage> {
                         height: 46,
                         child: ElevatedButton(
                           onPressed: () {
-                            Navigator.of(context).popUntil((route) => route.isFirst);
+                            Navigator.of(
+                              context,
+                            ).popUntil((route) => route.isFirst);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryGreen,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                             elevation: 0,
                           ),
-                          child: const Text('ตกลง', style: TextStyle(color: Colors.white, fontSize: 16)),
+                          child: const Text(
+                            'ตกลง',
+                            style: TextStyle(color: Colors.white, fontSize: 16),
+                          ),
                         ),
                       ),
                     ],
@@ -245,9 +366,20 @@ class _MenuFoodPageState extends State<MenuFoodPage> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            IconButton(onPressed: () { Navigator.of(context).popUntil((route) => route.isFirst); }, icon: const Icon(Icons.home, color: Colors.white)),
-            IconButton(onPressed: () {}, icon: const Icon(Icons.search, color: Colors.white)),
-            IconButton(onPressed: () {}, icon: const Icon(Icons.list_alt, color: Colors.white)),
+            IconButton(
+              onPressed: () {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+              icon: const Icon(Icons.home, color: Colors.white),
+            ),
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.search, color: Colors.white),
+            ),
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.list_alt, color: Colors.white),
+            ),
           ],
         ),
       ),

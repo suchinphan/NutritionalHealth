@@ -33,7 +33,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   final _newCtrl = TextEditingController();
   final _otpCtrl = TextEditingController();
   bool _isForgotMode = false;
-  
+
   bool _loading = false;
   bool _obscureCurrent = true;
   bool _obscureNew = true;
@@ -46,7 +46,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     _emailCtrl.dispose();
     _tokenCtrl.dispose();
     _otpCtrl.dispose();
-   
+
     _currentCtrl.dispose();
     _newCtrl.dispose();
     super.dispose();
@@ -57,7 +57,8 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     super.initState();
     // Prefill controllers if initial values provided (from forgot flow)
     try {
-      if (widget.initialUsername != null) _userCtrl.text = widget.initialUsername!;
+      if (widget.initialUsername != null)
+        _userCtrl.text = widget.initialUsername!;
     } catch (_) {}
     try {
       if (widget.initialEmail != null) _emailCtrl.text = widget.initialEmail!;
@@ -74,128 +75,131 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   }
 
   Future<void> _onSubmit() async {
-  if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) return;
 
-  setState(() => _loading = true);
+    setState(() => _loading = true);
 
-  try {
-    final currentText = _currentCtrl.text.trim();
-    final newPasswordText = _newCtrl.text.trim();
-    final otpText = _otpCtrl.text.trim();
+    try {
+      final currentText = _currentCtrl.text.trim();
+      final newPasswordText = _newCtrl.text.trim();
+      final otpText = _otpCtrl.text.trim();
 
-    // Decide flow by mode flag
-    final isForgot = _isForgotMode;
+      // Decide flow by mode flag
+      final isForgot = _isForgotMode;
 
-    // Quick client-side guard: if normal mode and user provided a real current password
-    // and it's the same as the new password, reject early.
-    if (!isForgot && currentText == newPasswordText) {
+      // Quick client-side guard: if normal mode and user provided a real current password
+      // and it's the same as the new password, reject early.
+      if (!isForgot && currentText == newPasswordText) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านปัจจุบัน'),
+          ),
+        );
+        return;
+      }
+
+      Map<String, dynamic> result;
+      if (isForgot) {
+        // Forgot-password flow: require OTP + email
+        final tokenText = _tokenCtrl.text.trim();
+        if (tokenText.isEmpty) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('กรุณากรอก Token')));
+          return;
+        }
+
+        if (otpText.isEmpty) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('กรุณากรอก OTP')));
+          return;
+        }
+        result = await AuthService().resetPasswordWithOtp(
+          resetToken: tokenText,
+          otp: otpText,
+          newPassword: newPasswordText,
+          username: _userCtrl.text.trim(),
+          email: _emailCtrl.text.trim(),
+        );
+      } else {
+        // Authenticated flow
+        result = await AuthService().changePassword(
+          username: _userCtrl.text.trim(),
+          email: _emailCtrl.text.trim(),
+          oldPassword: currentText,
+          newPassword: newPasswordText,
+        );
+      }
+
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านปัจจุบัน')),
-      );
-      return;
-    }
 
-    Map<String, dynamic> result;
-    if (isForgot) {
-      // Forgot-password flow: require OTP + email
-      final tokenText = _tokenCtrl.text.trim();
-      if (tokenText.isEmpty) {
-        setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('กรุณากรอก Token')),
+      if (result['statusCode'] == 200 || result['statusCode'] == 201) {
+        showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('สำเร็จ'),
+            content: const Text('รหัสผ่านถูกเปลี่ยนเรียบร้อยแล้ว'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => const LoginPage()),
+                  );
+                },
+                child: const Text('ตกลง'),
+              ),
+            ],
+          ),
         );
-        return;
-      }
-
-      if (otpText.isEmpty) {
-        setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('กรุณากรอก OTP')),
-        );
-        return;
-      }
-      result = await AuthService().resetPasswordWithOtp(
-        resetToken: tokenText,
-        otp: otpText,
-        newPassword: newPasswordText,
-        username: _userCtrl.text.trim(),
-        email: _emailCtrl.text.trim(),
-      );
-    } else {
-      // Authenticated flow
-      result = await AuthService().changePassword(
-        username: _userCtrl.text.trim(),
-        email: _emailCtrl.text.trim(),
-        oldPassword: currentText,
-        newPassword: newPasswordText,
-      );
-    }
-
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    if (result['statusCode'] == 200 || result['statusCode'] == 201) {
-      showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('สำเร็จ'),
-          content: const Text('รหัสผ่านถูกเปลี่ยนเรียบร้อยแล้ว'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (_) => const LoginPage(),
-                  ),
-                );
-              },
-              child: const Text('ตกลง'),
-            ),
-          ],
-        ),
-      );
-    } else {
-      // Map backend errors to user-friendly Thai messages depending on flow
-      String msg = 'ไม่สามารถเปลี่ยนรหัสผ่านได้';
-
-      final err = (result['error'] ?? result['message'] ?? '').toString();
-
-      if (isForgot) {
-        if (err.contains('invalid token')) {
-          msg = 'ไม่พบ token กรุณาเข้าสู่ระบบใหม่';
-        } else if (err.contains('token expired')) {
-          msg = 'token หมดอายุ กรุณาขอกำหนดรหัสผ่านใหม่';
-        } else {
-          msg = err.isNotEmpty ? err : msg;
-        }
       } else {
-        if (result['statusCode'] == 401) {
-          // Distinguish between not-logged-in vs wrong current password
-          if (err.contains('กรุณาเข้าสู่ระบบ') || err.toLowerCase().contains('authorization') || err.toLowerCase().contains('token')) {
-            msg = 'กรุณาเข้าสู่ระบบใหม่';
+        // Map backend errors to user-friendly Thai messages depending on flow
+        String msg = 'ไม่สามารถเปลี่ยนรหัสผ่านได้';
+
+        final err = (result['error'] ?? result['message'] ?? '').toString();
+
+        if (isForgot) {
+          if (err.contains('invalid token')) {
+            msg = 'ไม่พบ token กรุณาเข้าสู่ระบบใหม่';
+          } else if (err.contains('token expired')) {
+            msg = 'token หมดอายุ กรุณาขอกำหนดรหัสผ่านใหม่';
           } else {
-            msg = 'รหัสผ่านเดิมหรือ token ไม่ถูกต้อง';
+            msg = err.isNotEmpty ? err : msg;
           }
         } else {
-          msg = err.isNotEmpty ? err : msg;
+          if (result['statusCode'] == 401) {
+            // Distinguish between not-logged-in vs wrong current password
+            if (err.contains('กรุณาเข้าสู่ระบบ') ||
+                err.toLowerCase().contains('authorization') ||
+                err.toLowerCase().contains('token')) {
+              msg = 'กรุณาเข้าสู่ระบบใหม่';
+            } else {
+              msg = 'รหัสผ่านเดิมหรือ token ไม่ถูกต้อง';
+            }
+          } else {
+            msg = err.isNotEmpty ? err : msg;
+          }
         }
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
       }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('เกิดข้อผิดพลาด')));
     }
-  } catch (e) {
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('เกิดข้อผิดพลาด')),
-    );
   }
-}
 
   Widget _roundedField({required Widget child}) {
     return Container(
@@ -205,10 +209,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         color: Colors.grey[300],
         borderRadius: BorderRadius.circular(24),
       ),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: child,
-      ),
+      child: Align(alignment: Alignment.centerLeft, child: child),
     );
   }
 
@@ -221,16 +222,11 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         elevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => const RegisterLoginPage(),
-            ),
+            MaterialPageRoute(builder: (_) => const RegisterLoginPage()),
           ),
           icon: Icon(Icons.arrow_back, color: primaryGreen),
         ),
-        title: Text(
-          'เปลี่ยนรหัสผ่าน',
-          style: TextStyle(color: primaryGreen),
-        ),
+        title: Text('เปลี่ยนรหัสผ่าน', style: TextStyle(color: primaryGreen)),
       ),
       body: Padding(
         padding: const EdgeInsets.all(12.0),
@@ -256,7 +252,8 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                       controller: _userCtrl,
                       readOnly: _isForgotMode,
                       decoration: const InputDecoration.collapsed(
-                          hintText: 'ชื่อผู้ใช้งาน'),
+                        hintText: 'ชื่อผู้ใช้งาน',
+                      ),
                       validator: (v) {
                         final s = (v ?? '').trim();
                         if (s.isEmpty) return 'กรุณากรอกชื่อผู้ใช้งาน';
@@ -277,12 +274,14 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                       keyboardType: TextInputType.emailAddress,
                       readOnly: _isForgotMode,
                       decoration: const InputDecoration.collapsed(
-                          hintText: 'อีเมล์'),
+                        hintText: 'อีเมล์',
+                      ),
                       validator: (v) {
                         final s = (v ?? '').trim();
                         if (s.isEmpty) return 'กรุณากรอกอีเมล์';
-                        final emailRegex =
-                            RegExp(r"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+                        final emailRegex = RegExp(
+                          r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+                        );
                         if (!emailRegex.hasMatch(s)) {
                           return 'รูปแบบอีเมล์ไม่ถูกต้อง';
                         }
@@ -307,8 +306,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                   const SizedBox(height: 12),
                   const SizedBox(height: 12),
                   // Old password: show only in normal mode
-                  if (!_isForgotMode)
-                    const SizedBox(height: 12),
+                  if (!_isForgotMode) const SizedBox(height: 12),
                   if (!_isForgotMode)
                     _roundedField(
                       child: Row(
@@ -318,7 +316,8 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                               controller: _currentCtrl,
                               obscureText: _obscureCurrent,
                               decoration: const InputDecoration.collapsed(
-                                  hintText: 'รหัสผ่านเดิม'),
+                                hintText: 'รหัสผ่านเดิม',
+                              ),
                               validator: (v) {
                                 if ((v ?? '').isEmpty) {
                                   return 'กรุณากรอกรหัสผ่านเดิม';
@@ -329,14 +328,15 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                           ),
                           IconButton(
                             onPressed: () => setState(
-                                () => _obscureCurrent = !_obscureCurrent),
+                              () => _obscureCurrent = !_obscureCurrent,
+                            ),
                             icon: Icon(
                               _obscureCurrent
                                   ? Icons.visibility_off
                                   : Icons.visibility,
                               color: Colors.grey[700],
                             ),
-                          )
+                          ),
                         ],
                       ),
                     ),
@@ -387,7 +387,8 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                             controller: _newCtrl,
                             obscureText: _obscureNew,
                             decoration: const InputDecoration.collapsed(
-                                hintText: 'รหัสผ่านใหม่'),
+                              hintText: 'รหัสผ่านใหม่',
+                            ),
                             validator: (v) {
                               final s = v ?? '';
                               if (s.isEmpty) {
@@ -397,7 +398,8 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                                 return 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร';
                               }
                               final policy = RegExp(
-                                  r'(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9])');
+                                r'(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9])',
+                              );
                               if (!policy.hasMatch(s)) {
                                 return 'รหัสผ่านต้องมีตัวพิมพ์ใหญ่ พิมพ์เล็ก ตัวเลข และอักขระพิเศษ';
                               }
@@ -421,7 +423,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                                 : Icons.visibility,
                             color: Colors.grey[700],
                           ),
-                        )
+                        ),
                       ],
                     ),
                   ),
@@ -458,10 +460,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                       )
                     : const Text(
                         'ตกลง',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
+                        style: TextStyle(color: Colors.white, fontSize: 16),
                       ),
               ),
             ),

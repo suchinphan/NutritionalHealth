@@ -26,28 +26,48 @@ class RegisterLoginPage extends StatelessWidget {
                   ElevatedButton(
                     onPressed: () {
                       // ไปยังหน้าเข้าสู่ระบบ (login_page.dart)
-                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const LoginPage()),
+                      );
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryGreen,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
                       elevation: 0,
                     ),
-                    child: const Text('เข้าสู่ระบบ', style: TextStyle(color: Colors.white)),
+                    child: const Text(
+                      'เข้าสู่ระบบ',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                   ElevatedButton(
                     onPressed: () {
                       // ไปยังหน้าสมัครสมาชิก (register_page.dart)
-                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RegisterPage()));
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const RegisterPage()),
+                      );
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryGreen,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
                       elevation: 0,
                     ),
-                    child: const Text('สมัครสมาชิก', style: TextStyle(color: Colors.white)),
+                    child: const Text(
+                      'สมัครสมาชิก',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ],
               ),

@@ -41,8 +41,6 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  
-
   bool get canUseGuest => _isGuest && !_guestUsed;
 
   Future<void> loadToken() async {
@@ -50,7 +48,9 @@ class AuthService with ChangeNotifier {
       final guestVal = await _storage.read(key: 'auth_guest');
       final guestUsedVal = await _storage.read(key: 'auth_guest_used');
       final guestPersonalJson = await _storage.read(key: 'auth_guest_personal');
-      final guestSelectionsJson = await _storage.read(key: 'auth_guest_selections');
+      final guestSelectionsJson = await _storage.read(
+        key: 'auth_guest_selections',
+      );
       if (guestVal == '1') {
         _isGuest = true;
         _guestUsed = (guestUsedVal == '1');
@@ -59,22 +59,26 @@ class AuthService with ChangeNotifier {
 
         try {
           if (guestPersonalJson != null) {
-            _guestPersonal = jsonDecode(guestPersonalJson) as Map<String, dynamic>?;
+            _guestPersonal =
+                jsonDecode(guestPersonalJson) as Map<String, dynamic>?;
           }
         } catch (_) {
           _guestPersonal = null;
         }
-        
+
         try {
           if (guestSelectionsJson != null) {
-            _guestSelections = jsonDecode(guestSelectionsJson) as Map<String, dynamic>?;
+            _guestSelections =
+                jsonDecode(guestSelectionsJson) as Map<String, dynamic>?;
           }
         } catch (_) {
           _guestSelections = null;
         }
 
         if (kDebugMode) {
-          debugPrint('Guest state restored (persisted guest_used=$guestUsedVal)');
+          debugPrint(
+            'Guest state restored (persisted guest_used=$guestUsedVal)',
+          );
         }
       } else {
         _token = await _storage.read(key: 'auth_token');
@@ -88,7 +92,9 @@ class AuthService with ChangeNotifier {
             _user = null;
           }
         }
-        debugPrint('AuthService.loadToken: loaded persisted user/token (isGuest=false)');
+        debugPrint(
+          'AuthService.loadToken: loaded persisted user/token (isGuest=false)',
+        );
       }
     } catch (e) {
       debugPrint('AuthService.loadToken ERROR: $e');
@@ -136,6 +142,7 @@ class AuthService with ChangeNotifier {
               if (s.isNotEmpty) toSend[key] = s;
             }
           }
+
           addIfPresent('gender');
           addIfPresent('age');
           addIfPresent('weight');
@@ -150,22 +157,37 @@ class AuthService with ChangeNotifier {
             while (attempt < maxAttempts && !succeeded) {
               attempt += 1;
               try {
-                final resp = await api.post('/user/$intId', headers: {'Authorization': 'Bearer $token'}, body: body, timeoutSeconds: 3);
+                final resp = await api.post(
+                  '/user/$intId',
+                  headers: {'Authorization': 'Bearer $token'},
+                  body: body,
+                  timeoutSeconds: 3,
+                );
                 if (resp.statusCode >= 200 && resp.statusCode < 300) {
-                  debugPrint('AuthService.saveUser: remote profile updated for user $intId (attempt $attempt)');
+                  debugPrint(
+                    'AuthService.saveUser: remote profile updated for user $intId (attempt $attempt)',
+                  );
                   succeeded = true;
                 } else {
-                  debugPrint('AuthService.saveUser: remote update failed ${resp.statusCode} ${resp.body} (attempt $attempt)');
+                  debugPrint(
+                    'AuthService.saveUser: remote update failed ${resp.statusCode} ${resp.body} (attempt $attempt)',
+                  );
                 }
               } catch (e) {
-                debugPrint('AuthService.saveUser: remote update error on attempt $attempt: $e');
+                debugPrint(
+                  'AuthService.saveUser: remote update error on attempt $attempt: $e',
+                );
               }
             }
             if (!succeeded) {
-              debugPrint('AuthService.saveUser: all attempts failed for user $intId');
+              debugPrint(
+                'AuthService.saveUser: all attempts failed for user $intId',
+              );
             }
           } else {
-            debugPrint('AuthService.saveUser: no personal fields to send for user $intId; skipping remote update');
+            debugPrint(
+              'AuthService.saveUser: no personal fields to send for user $intId; skipping remote update',
+            );
           }
         }
       }
@@ -188,7 +210,8 @@ class AuthService with ChangeNotifier {
       _guestUsed = false;
       if (_anonId == null) {
         final rnd = Random();
-        _anonId = '${DateTime.now().millisecondsSinceEpoch}_${rnd.nextInt(1 << 31)}';
+        _anonId =
+            '${DateTime.now().millisecondsSinceEpoch}_${rnd.nextInt(1 << 31)}';
       }
     } catch (e) {
       debugPrint('AuthService.saveGuest ERROR: $e');
@@ -216,13 +239,12 @@ class AuthService with ChangeNotifier {
   }
 
   Future<void> handleAuthSuccess(String token, Map<String, dynamic> u) async {
-  await clearGuest();
-  _isGuest = false;
-  await saveToken(token);
-  await saveUser(u);
-  notifyListeners();
-}
-
+    await clearGuest();
+    _isGuest = false;
+    await saveToken(token);
+    await saveUser(u);
+    notifyListeners();
+  }
 
   String? get anonId => _anonId;
   Map<String, dynamic>? get guestPersonal => _guestPersonal;
@@ -248,7 +270,9 @@ class AuthService with ChangeNotifier {
     try {
       final encoded = jsonEncode(_guestPersonal);
       await _storage.write(key: 'auth_guest_personal', value: encoded);
-      debugPrint('AuthService.saveGuestPersonal: persisted auth_guest_personal');
+      debugPrint(
+        'AuthService.saveGuestPersonal: persisted auth_guest_personal',
+      );
     } catch (e) {
       debugPrint('AuthService.saveGuestPersonal ERROR: $e');
     }
@@ -256,21 +280,25 @@ class AuthService with ChangeNotifier {
   }
 
   Future<void> saveGuestSelections(Map<String, dynamic> s) async {
+    // 🔒 ป้องกัน guest ใช้ซ้ำ
+    if (_guestUsed) {
+      debugPrint('Guest already used — skip saving selections');
+      return;
+    }
+
     _guestSelections = Map<String, dynamic>.from(s);
     try {
       final encoded = jsonEncode(_guestSelections);
       await _storage.write(key: 'auth_guest_selections', value: encoded);
-      debugPrint('AuthService.saveGuestSelections: persisted auth_guest_selections');
-    } catch (e) {
-      debugPrint('AuthService.saveGuestSelections ERROR: $e');
-    }
+    } catch (_) {}
     notifyListeners();
   }
 
   Future<void> ensureAnonId() async {
     if (_anonId != null) return;
     final rnd = Random();
-    _anonId = '${DateTime.now().millisecondsSinceEpoch}_${rnd.nextInt(1 << 31)}';
+    _anonId =
+        '${DateTime.now().millisecondsSinceEpoch}_${rnd.nextInt(1 << 31)}';
   }
 
   Future<void> markGuestUsed() async {
@@ -290,7 +318,9 @@ class AuthService with ChangeNotifier {
     _guestUsed = false;
     try {
       await _storage.delete(key: 'auth_guest_used');
-      debugPrint('AuthService.resetGuestUsed: removed persisted auth_guest_used');
+      debugPrint(
+        'AuthService.resetGuestUsed: removed persisted auth_guest_used',
+      );
     } catch (e) {
       debugPrint('AuthService.resetGuestUsed ERROR: $e');
     }
@@ -298,32 +328,34 @@ class AuthService with ChangeNotifier {
   }
 
   Future<void> clearToken({bool force = false}) async {
-  if (_isGuest && !force) {
-    debugPrint('AuthService.clearToken skipped: current session is Guest (use force=true to override)');
-    return;
+    if (_isGuest && !force) {
+      debugPrint(
+        'AuthService.clearToken skipped: current session is Guest (use force=true to override)',
+      );
+      return;
+    }
+    debugPrint('AuthService.clearToken: clearing auth state (force=$force)');
+    _token = null;
+    _user = null;
+    _isGuest = false;
+    _guestUsed = false;
+    _guestPersonal = null;
+    _guestSelections = null;
+    _anonId = null;
+    try {
+      await _storage.delete(key: 'auth_token');
+      await _storage.delete(key: 'auth_user');
+      await _storage.delete(key: 'auth_guest');
+      await _storage.delete(key: 'auth_guest_used');
+      await _storage.delete(key: 'auth_guest_personal');
+      await _storage.delete(key: 'auth_guest_selections');
+      await _storage.delete(key: 'anon_id');
+      debugPrint('AuthService.clearToken: cleared auth storage keys');
+    } catch (e) {
+      debugPrint('AuthService.clearToken ERROR: $e');
+    }
+    notifyListeners();
   }
-  debugPrint('AuthService.clearToken: clearing auth state (force=$force)');
-  _token = null;
-  _user = null;
-  _isGuest = false;
-  _guestUsed = false;
-  _guestPersonal = null;
-  _guestSelections = null;
-  _anonId = null;
-  try {
-    await _storage.delete(key: 'auth_token');
-    await _storage.delete(key: 'auth_user');
-    await _storage.delete(key: 'auth_guest');
-    await _storage.delete(key: 'auth_guest_used');
-    await _storage.delete(key: 'auth_guest_personal');
-    await _storage.delete(key: 'auth_guest_selections');
-    await _storage.delete(key: 'anon_id');
-    debugPrint('AuthService.clearToken: cleared auth storage keys');
-  } catch (e) {
-    debugPrint('AuthService.clearToken ERROR: $e');
-  }
-  notifyListeners();
-}
 
   Future<void> logout() async {
     debugPrint('🔥 LOGOUT CALLED 🔥');
@@ -341,7 +373,6 @@ class AuthService with ChangeNotifier {
     required String newPassword,
     bool useAuth = true,
   }) async {
-
     // ✅ โหลด token จาก memory หรือ storage (แต่ไม่บังคับให้ต้องมี)
     if (_token == null || _token!.isEmpty) {
       _token = await _storage.read(key: 'auth_token');
@@ -384,98 +415,91 @@ class AuthService with ChangeNotifier {
     return decoded;
   }
 
-// ==========================================================
-// 🔥 RESET PASSWORD (ใช้ reset_token + current_password)
-// Backend ต้องการ:
-// reset_token
-// current_password
-// new_password
-// ==========================================================
-Future<Map<String, dynamic>> resetPassword({
-  required String resetToken,
-  required String newPassword,
-}) async {
+  // ==========================================================
+  // 🔥 RESET PASSWORD (ใช้ reset_token + current_password)
+  // Backend ต้องการ:
+  // reset_token
+  // current_password
+  // new_password
+  // ==========================================================
+  Future<Map<String, dynamic>> resetPassword({
+    required String resetToken,
+    required String newPassword,
+  }) async {
+    // Client-side validation: token must be present and non-empty
+    if (resetToken.trim().isEmpty) {
+      return {'error': 'reset_token required', 'statusCode': 400};
+    }
 
-  // Client-side validation: token must be present and non-empty
-  if (resetToken.trim().isEmpty) {
-    return {'error': 'reset_token required', 'statusCode': 400};
+    final api = ApiClient(getApiBase());
+
+    final body = jsonEncode({
+      'reset_token': resetToken.trim(),
+      'new_password': newPassword,
+    });
+
+    final resp = await api.post(
+      '/reset-password',
+      headers: {'Content-Type': 'application/json', 'X-Skip-Auth': '1'},
+      body: body,
+    );
+
+    final decoded = <String, dynamic>{};
+
+    try {
+      if (resp.body.isNotEmpty) {
+        final d = jsonDecode(resp.body);
+        if (d is Map<String, dynamic>) {
+          decoded.addAll(d);
+        }
+      }
+    } catch (_) {}
+
+    decoded['statusCode'] = resp.statusCode;
+    return decoded;
   }
 
-  final api = ApiClient(getApiBase());
+  // New: reset via OTP (forgot-password flow)
+  Future<Map<String, dynamic>> resetPasswordWithOtp({
+    required String resetToken,
+    required String otp,
+    required String newPassword,
+    String? username,
+    String? email,
+  }) async {
+    final t = resetToken.trim();
+    final o = otp.trim();
+    final u = username?.trim();
+    final e = email?.trim();
+    if (t.isEmpty) return {'error': 'reset_token required', 'statusCode': 400};
+    if (o.isEmpty) return {'error': 'otp required', 'statusCode': 400};
 
-  final body = jsonEncode({
-    'reset_token': resetToken.trim(),
-    'new_password': newPassword,
-  });
+    final api = ApiClient(getApiBase());
+    final bodyMap = {'reset_token': t, 'otp': o, 'new_password': newPassword};
+    if (u != null && u.isNotEmpty) bodyMap['username'] = u;
+    if (e != null && e.isNotEmpty) bodyMap['email'] = e;
+    final body = jsonEncode(bodyMap);
 
-  final resp = await api.post(
-    '/reset-password',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Skip-Auth': '1',
-    },
-    body: body,
-  );
+    final resp = await api.post(
+      '/reset-password',
+      headers: {'Content-Type': 'application/json'},
+      body: body,
+    );
 
-  final decoded = <String, dynamic>{};
-
-  try {
-    if (resp.body.isNotEmpty) {
-      final d = jsonDecode(resp.body);
-      if (d is Map<String, dynamic>) {
-        decoded.addAll(d);
+    final decoded = <String, dynamic>{};
+    try {
+      if (resp.body.isNotEmpty) {
+        final d = jsonDecode(resp.body);
+        if (d is Map<String, dynamic>) decoded.addAll(d);
       }
-    }
-  } catch (_) {}
+    } catch (_) {}
+    decoded['statusCode'] = resp.statusCode;
+    return decoded;
+  }
 
-  decoded['statusCode'] = resp.statusCode;
-  return decoded;
-}
-
-// New: reset via OTP (forgot-password flow)
-Future<Map<String, dynamic>> resetPasswordWithOtp({
-  required String resetToken,
-  required String otp,
-  required String newPassword,
-  String? username,
-  String? email,
-}) async {
-  final t = resetToken.trim();
-  final o = otp.trim();
-  final u = username?.trim();
-  final e = email?.trim();
-  if (t.isEmpty) return {'error': 'reset_token required', 'statusCode': 400};
-  if (o.isEmpty) return {'error': 'otp required', 'statusCode': 400};
-
-  final api = ApiClient(getApiBase());
-  final bodyMap = {'reset_token': t, 'otp': o, 'new_password': newPassword};
-  if (u != null && u.isNotEmpty) bodyMap['username'] = u;
-  if (e != null && e.isNotEmpty) bodyMap['email'] = e;
-  final body = jsonEncode(bodyMap);
-
-  final resp = await api.post(
-    '/reset-password',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: body,
-  );
-
-  final decoded = <String, dynamic>{};
-  try {
-    if (resp.body.isNotEmpty) {
-      final d = jsonDecode(resp.body);
-      if (d is Map<String, dynamic>) decoded.addAll(d);
-    }
-  } catch (_) {}
-  decoded['statusCode'] = resp.statusCode;
-  return decoded;
-}
-
-// Compatibility wrapper: some pages still call `resetPassword` with the
-// change-password parameter names (username/email/oldPassword/newPassword).
-// The compatibility extension is placed after the class closing brace.
-
+  // Compatibility wrapper: some pages still call `resetPassword` with the
+  // change-password parameter names (username/email/oldPassword/newPassword).
+  // The compatibility extension is placed after the class closing brace.
 
   Future<bool> saveSelection(Map<String, dynamic> data) async {
     try {
@@ -489,7 +513,10 @@ Future<Map<String, dynamic>> resetPasswordWithOtp({
 
       final resp = await api.post(
         '/save-selection',
-        headers: {'Authorization': 'Bearer $_token', 'Content-Type': 'application/json'},
+        headers: {
+          'Authorization': 'Bearer $_token',
+          'Content-Type': 'application/json',
+        },
         body: jsonEncode(data),
         timeoutSeconds: 7,
       );

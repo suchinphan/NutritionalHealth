@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, send_file, Response, session, redirect, url_for, current_app
-from sqlalchemy import func, create_engine
+from sqlalchemy import func, create_engine, text
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 import os
@@ -30,6 +30,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 # Import DB and models
 from models import db, User, FoodMenu, FoodCategory, FoodType, DrinkMenu, DrinkType, DessertMenu, Submission, Report, History
+from sqlalchemy import JSON as SA_JSON
 
 def create_app():
     app = Flask(__name__)
@@ -317,6 +318,148 @@ def get_foods():
             for f in pagination.items
         ]
     })
+
+
+@limiter.limit("60 per minute")
+@app.route('/api/food-menus', methods=['GET'])
+def get_food_menus_api():
+    try:
+        foods = FoodMenu.query.all()
+        result = []
+        for f in foods:
+            cat_name = None
+            try:
+                if getattr(f, 'category', None):
+                    cat_name = getattr(f.category, 'name', None)
+            except Exception:
+                cat_name = None
+
+            result.append({
+                'id': f.id,
+                'name': getattr(f, 'name', None),
+                'category': cat_name,
+                'calories': float(f.calories) if getattr(f, 'calories', None) is not None else None
+            })
+
+        return jsonify(result)
+    except Exception:
+        app.logger.exception('get_food_menus_api error')
+        return jsonify({'error': 'internal'}), 500
+
+
+@limiter.limit("60 per minute")
+@app.route('/api/dessert-menus', methods=['GET'])
+def get_dessert_menus_api():
+    try:
+        # Use information_schema to avoid ORM errors when DB schema is legacy
+        schema = db.engine.url.database
+        col_q = text("SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema=:schema AND table_name='dessert_menus'")
+        cols = {r[0] for r in db.session.execute(col_q, {"schema": schema}).fetchall()}
+
+        result = []
+        if 'name' in cols:
+            rows = db.session.execute(text("SELECT id, name, calories FROM dessert_menus")).fetchall()
+            for r in rows:
+                result.append({
+                    'id': int(r[0]),
+                    'name': r[1],
+                    'calories': float(r[2]) if r[2] is not None else None
+                })
+        else:
+            rows = db.session.execute(text("SELECT id, dessert_name, calories FROM dessert_menus")).fetchall()
+            for r in rows:
+                result.append({
+                    'id': int(r[0]),
+                    'name': r[1],
+                    'calories': float(r[2]) if r[2] is not None else None
+                })
+
+        return jsonify(result)
+    except Exception:
+        app.logger.exception('get_dessert_menus_api error')
+        return jsonify({'error': 'internal'}), 500
+
+# -----------------------------
+# FOOD TYPES (หน้าเลือกประเภท)
+# -----------------------------
+@app.route("/api/food-types")
+def api_food_types():
+    return jsonify([
+        {"id": ft.id, "name": ft.name}
+        for ft in FoodType.query.all()
+    ])
+
+
+# -----------------------------
+# FOOD CATEGORIES (ตามประเภท)
+# -----------------------------
+@app.route("/api/food-categories")
+def api_food_categories():
+    food_type_id = request.args.get("food_type_id", type=int)
+
+    q = FoodCategory.query
+    if food_type_id:
+        q = q.filter(FoodCategory.food_type_id == food_type_id)
+
+    return jsonify([
+        {"id": c.id, "name": c.name}
+        for c in q.all()
+    ])
+
+@app.route("/api/drink-types")
+def api_drink_types():
+    return jsonify([
+        {"id": d.id, "name": d.name}
+        for d in DrinkType.query.all()
+    ])
+
+# -----------------------------
+# FOOD MENUS (ตามหมวด)
+# -----------------------------
+@app.route("/api/food-menus-simple")
+def api_food_menus_simple():
+    category_id = request.args.get("category_id", type=int)
+
+    q = FoodMenu.query
+
+    if category_id:
+        q = q.filter(FoodMenu.category_id == category_id)
+
+    # ✅ ตัดเมนูที่ไม่ใช่อาหารจริง
+    q = q.filter(FoodMenu.is_dessert == False)
+
+    return jsonify([
+        {
+            "id": m.id,
+            "name": m.name,
+            "calories": m.calories
+        }
+        for m in q.all()
+    ])
+
+@limiter.limit("60 per minute")
+@app.route('/api/drink-menus', methods=['GET'])
+def get_drink_menus_api():
+    try:
+        # Allow filtering by drink_type_id so each drink type shows its own menus
+        drink_type_id = request.args.get('drink_type_id', type=int)
+        q = DrinkMenu.query
+        if drink_type_id:
+            q = q.filter(DrinkMenu.drink_type_id == drink_type_id)
+
+        drinks = q.all()
+        result = [
+            {
+                'id': dr.id,
+                'name': getattr(dr, 'name', None),
+                'calories': float(getattr(dr, 'calories', None)) if getattr(dr, 'calories', None) is not None else None
+            }
+            for dr in drinks
+        ]
+        return jsonify(result)
+    except Exception:
+        app.logger.exception('get_drink_menus_api error')
+        return jsonify({'error': 'internal'}), 500
 # Register admin blueprint if available
 try:
     from admin.admin_routes import admin_bp
@@ -443,6 +586,67 @@ def ensure_temp_columns():
 
 # Ensure temp columns exist for backward compatibility
 ensure_temp_columns()
+
+
+def ensure_food_is_dessert_column():
+    """Ensure `is_dessert` boolean column exists on `food_menus`.
+
+    This runs at startup to make the change in-place for existing DBs.
+    """
+    from sqlalchemy import text
+    table = 'food_menus'
+    try:
+        with app.app_context():
+            engine = db.engine
+            dialect = engine.dialect.name
+            with engine.connect() as conn:
+                if dialect == 'mysql':
+                    r = conn.execute(text(f"SHOW COLUMNS FROM {table} LIKE 'is_dessert'"))
+                    if r.first() is None:
+                        app.logger.info('Adding is_dessert column (MySQL)')
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN is_dessert TINYINT(1) DEFAULT 0"))
+                else:
+                    # SQLite / others
+                    r = conn.execute(text(f"PRAGMA table_info({table})"))
+                    cols = [row[1] for row in r]
+                    if 'is_dessert' not in cols:
+                        app.logger.info('Adding is_dessert column (SQLite/other)')
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN is_dessert INTEGER DEFAULT 0"))
+    except Exception as e:
+        app.logger.warning('ensure_food_is_dessert_column failed: %s', e)
+
+
+# Ensure food_menus has is_dessert column
+ensure_food_is_dessert_column()
+
+
+def save_history_record(user_id, data_obj):
+    """Save a History record. If the `data` column supports JSON, store
+    the object directly; otherwise serialize to JSON text (ensure_ascii=False).
+
+    This keeps backward compatibility when DB uses TEXT vs JSON column types.
+    """
+    try:
+        col_type = None
+        try:
+            col_type = History.__table__.c.data.type
+        except Exception:
+            col_type = None
+
+        # If DB column is JSON/JSONB type, store the object directly
+        if col_type is not None and isinstance(col_type, SA_JSON):
+            h = History(user_id=user_id, data=data_obj)
+        else:
+            # Fallback: dump to string for TEXT columns
+            h = History(user_id=user_id, data=json.dumps(data_obj, ensure_ascii=False, default=str))
+
+        db.session.add(h)
+        db.session.commit()
+        return h
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('save_history_record failed for user %s', user_id)
+        raise
 
 
 def token_valid_for_user(user: User, token: str) -> bool:
@@ -906,6 +1110,10 @@ def get_menus():
             # 1) Try ORM exact/contains match; if DB schema is missing columns fall back to raw SQL
             cat = None
             cat_id = None
+            # Detect whether this request is asking for carb-like categories so
+            # we can explicitly exclude desserts at the DB level (protects
+            # against mis-labelled rows in FoodMenu).
+            is_carb_request = any(t in cat_lower for t in ['carb', 'carbo', 'carb', 'คาร์โบ', 'คาร์โบไฮเดรต', 'ข้าว', 'แป้ง', 'เส้น', 'rice', 'noodle', 'pasta', 'bread'])
             try:
                 cat = FoodCategory.query.filter(func.lower(FoodCategory.name) == cat_lower).first()
                 if not cat:
@@ -960,6 +1168,26 @@ def get_menus():
             if cat_id is not None:
                 q = q.filter(FoodMenu.category_id == cat_id)
 
+            # If caller requested carb-like category, ensure we exclude desserts
+            # from the FoodMenu results. Prefer the explicit `is_dessert` column
+            # if available; otherwise fall back to excluding names present in
+            # the DessertMenu table.
+            if is_carb_request:
+                try:
+                    if hasattr(FoodMenu, 'is_dessert'):
+                        q = q.filter(FoodMenu.is_dessert == False)
+                    else:
+                        # Fallback: exclude any FoodMenu whose name also exists in DessertMenu
+                        try:
+                            dessert_names = [d[0] for d in DessertMenu.query.with_entities(DessertMenu.dessert_name).all()]
+                            if dessert_names:
+                                q = q.filter(~FoodMenu.name.in_(dessert_names))
+                        except Exception:
+                            # If querying DessertMenu fails, don't break the request; just log.
+                            app.logger.exception('Failed to query DessertMenu for fallback exclusion')
+                except Exception:
+                    app.logger.exception('Failed to apply dessert exclusion for carb category')
+
         items = q.order_by(FoodMenu.name.asc()).limit(500).all()
         return jsonify({'items': [m.name for m in items]})
     except Exception:
@@ -994,10 +1222,58 @@ def get_desserts():
     """Return desserts list. Optionally allow category filter via ?category=."""
     try:
         # There is a dedicated DessertMenu table; simply return names (optionally could filter by category later)
-        items = DessertMenu.query.order_by(DessertMenu.name.asc()).limit(500).all()
+        items = DessertMenu.query.order_by(DessertMenu.dessert_name.asc()).limit(500).all()
         return jsonify({'items': [d.name for d in items]})
     except Exception:
         app.logger.exception('Failed to fetch desserts')
+        return jsonify({'items': []}), 500
+
+
+@limiter.limit("30 per minute")
+@app.route('/menu-info', methods=['POST'])
+def menu_info():
+    """Batch lookup for menu names -> calories.
+
+    Request JSON: { "names": ["Name1", "Name2"] }
+    Response JSON: { "items": [{"name": "Name1", "kcal": 123}, ...] }
+    """
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'JSON body required'}), 400
+        data = request.get_json(silent=True) or {}
+        names = data.get('names') or []
+        if not isinstance(names, list):
+            return jsonify({'error': 'names must be list'}), 400
+
+        out = []
+        for n in names:
+            if not n or not isinstance(n, str):
+                out.append({'name': n, 'kcal': None})
+                continue
+            name = n.strip()
+            # try exact match case-insensitive on DessertMenu first
+            try:
+                d = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == name.lower()).first()
+                if d:
+                    out.append({'name': name, 'kcal': d.calories})
+                    continue
+            except Exception:
+                app.logger.exception('dessert lookup failed')
+
+            try:
+                f = FoodMenu.query.filter(func.lower(FoodMenu.name) == name.lower()).first()
+                if f:
+                    out.append({'name': name, 'kcal': f.calories})
+                    continue
+            except Exception:
+                app.logger.exception('food lookup failed')
+
+            # not found
+            out.append({'name': name, 'kcal': None})
+
+        return jsonify({'items': out})
+    except Exception:
+        app.logger.exception('menu-info failed')
         return jsonify({'items': []}), 500
 
 @limiter.limit("10 per minute")
@@ -1056,7 +1332,16 @@ def add_menu():
 def get_anon_history(anon_id):
     """Return submissions for an anonymous id."""
     subs = Submission.query.filter_by(anon_id=anon_id).order_by(Submission.created_at.asc()).all()
-    items = [{'id': s.id, 'data': s.data, 'created_at': s.created_at.isoformat()} for s in subs]
+    items = []
+    for s in subs:
+        data_field = s.data
+        try:
+            if isinstance(data_field, str):
+                parsed = json.loads(data_field)
+                data_field = parsed
+        except Exception:
+            pass
+        items.append({'id': s.id, 'data': data_field, 'created_at': s.created_at.isoformat()})
     return jsonify({'history': items})
 
 @limiter.limit("10 per minute")
@@ -1278,11 +1563,21 @@ def get_history(user_id):
     histories = []
 
     for h in user.histories:
+        # If stored as JSON text, try to parse back to object for API
+        data_field = h.data
+        try:
+            if isinstance(data_field, str):
+                parsed = json.loads(data_field)
+                data_field = parsed
+        except Exception:
+            # keep raw value if parsing fails
+            pass
+
         histories.append({
             'id': h.id,
             'user_id': h.user_id,
             'created_at': h.created_at.isoformat(),
-            'data': h.data
+            'data': data_field
         })
 
     return jsonify({'history': histories}), 200
@@ -1317,12 +1612,9 @@ def save_partial_selection():
     data = request.get_json(silent=True) or {}
 
     try:
-        hist = History(user_id=user.id, data=json.dumps(data, default=str))
-        db.session.add(hist)
-        db.session.commit()
-        return jsonify({"status": "saved", "history_id": hist.id}), 201
+        h = save_history_record(user.id, data)
+        return jsonify({"status": "saved", "history_id": h.id}), 201
     except Exception:
-        db.session.rollback()
         app.logger.exception('Partial history insert failed for user %s', user.id)
         return jsonify({"error": "database error"}), 500
 
@@ -1799,6 +2091,55 @@ def reset_token_info():
     except Exception:
         pass
 
+
+@limiter.limit("30 per minute")
+@app.route('/user-selections/<int:user_id>', methods=['GET'])
+def get_user_selections(user_id):
+    """Return user's selections with resolved menu/dessert/drink names."""
+    auth = request.headers.get('Authorization') or ''
+    if not auth.startswith('Bearer '):
+        return jsonify({'error': 'authorization required'}), 401
+
+    token = auth.split(' ', 1)[1].strip()
+    user = User.query.get_or_404(user_id)
+    if not token_valid_for_user(user, token):
+        return jsonify({'error': 'invalid or expired token'}), 401
+
+    try:
+        items = []
+        sels = UserSelection.query.filter_by(user_id=user.id).order_by(UserSelection.created_at.asc()).all()
+        for s in sels:
+            name = None
+            item_type = None
+            details = None
+            if s.menu:
+                name = s.menu.name
+                item_type = 'menu'
+                details = {'id': s.menu.id, 'calories': s.menu.calories}
+            elif s.dessert:
+                name = s.dessert.name
+                item_type = 'dessert'
+                details = {'id': s.dessert.id, 'calories': s.dessert.calories}
+            elif s.drink_menu:
+                name = s.drink_menu.name
+                item_type = 'drink'
+                details = {'id': s.drink_menu.id}
+
+            items.append({
+                'id': s.id,
+                'created_at': s.created_at.isoformat(),
+                'meal': s.meal,
+                'duration': s.duration,
+                'type': item_type,
+                'name': name,
+                'details': details
+            })
+
+        return jsonify({'selections': items}), 200
+    except Exception:
+        app.logger.exception('Failed to fetch user selections')
+        return jsonify({'selections': []}), 500
+
     if datetime.now(timezone.utc) > expires:
         return jsonify({'error': 'โทเคนหมดอายุ'}), 400
 
@@ -1986,12 +2327,18 @@ def save_selection():
 
     data = request.get_json(silent=True) or {}
 
+    # Support both name-based and id-based payloads. ID takes precedence.
     selected_type = data.get("selectedType")
     selected_category = data.get("selectedCategory")
     selected_menu = data.get("selectedMenu")
     selected_dessert = data.get("selectedDessert")
     selected_drink_type = data.get("selectedDrinkType")
     selected_drink_menu = data.get("selectedDrinkMenu")
+
+    # Numeric id fields (preferred when provided)
+    menu_id_payload = data.get('menu_id')
+    dessert_menu_id_payload = data.get('dessert_menu_id')
+    drink_menu_id_payload = data.get('drink_menu_id')
 
     meal = (data.get("meal") or "").strip()
     duration = data.get("duration")
@@ -2007,14 +2354,45 @@ def save_selection():
         return jsonify({"error": "duration must be positive integer"}), 400
 
     # =========================
-    # 3️⃣ MAP NAME → ID
+    # 3️⃣ MAP NAME/ID → ID (ID takes precedence)
     # =========================
     food_type = FoodType.query.filter_by(name=selected_type).first() if selected_type else None
     category = FoodCategory.query.filter_by(name=selected_category).first() if selected_category else None
-    menu = FoodMenu.query.filter_by(name=selected_menu).first() if selected_menu else None
-    dessert = DessertMenu.query.filter_by(name=selected_dessert).first() if selected_dessert else None
+
+    # Resolve menu by id if provided, otherwise by name
+    menu = None
+    if menu_id_payload is not None:
+        try:
+            mid = int(menu_id_payload)
+            menu = FoodMenu.query.get(mid)
+        except Exception:
+            menu = None
+    elif selected_menu:
+        menu = FoodMenu.query.filter_by(name=selected_menu).first()
+
+    # Resolve dessert by id if provided, otherwise by name
+    dessert = None
+    if dessert_menu_id_payload is not None:
+        try:
+            did = int(dessert_menu_id_payload)
+            dessert = DessertMenu.query.get(did)
+        except Exception:
+            dessert = None
+    elif selected_dessert:
+        dessert = DessertMenu.query.filter_by(name=selected_dessert).first()
+
     drink_type = DrinkType.query.filter_by(name=selected_drink_type).first() if selected_drink_type else None
-    drink_menu = DrinkMenu.query.filter_by(name=selected_drink_menu).first() if selected_drink_menu else None
+
+    # Resolve drink menu by id if provided, otherwise by name
+    drink_menu = None
+    if drink_menu_id_payload is not None:
+        try:
+            dm = int(drink_menu_id_payload)
+            drink_menu = DrinkMenu.query.get(dm)
+        except Exception:
+            drink_menu = None
+    elif selected_drink_menu:
+        drink_menu = DrinkMenu.query.filter_by(name=selected_drink_menu).first()
 
     # Validate if name provided but not found
     if selected_type and not food_type:
@@ -2023,10 +2401,10 @@ def save_selection():
     if selected_category and not category:
         return jsonify({"error": "invalid category"}), 400
 
-    if selected_menu and not menu:
+    if (selected_menu or menu_id_payload is not None) and not menu:
         return jsonify({"error": "invalid menu"}), 400
 
-    if selected_dessert and not dessert:
+    if (selected_dessert or dessert_menu_id_payload is not None) and not dessert:
         return jsonify({"error": "invalid dessert"}), 400
 
     if selected_drink_type and not drink_type:
@@ -2056,11 +2434,8 @@ def save_selection():
 
         # Also persist a History record so the frontend can retrieve full data
         try:
-            hist = History(user_id=user.id, data=json.dumps(data, default=str))
-            db.session.add(hist)
-            db.session.commit()
+            save_history_record(user.id, data)
         except Exception:
-            db.session.rollback()
             app.logger.exception('History insert failed for user %s', user.id)
 
         return jsonify({
