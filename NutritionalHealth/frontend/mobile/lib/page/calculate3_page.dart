@@ -273,6 +273,8 @@ class Calculate3Page extends StatelessWidget {
                   ),
                 ),
                 onPressed: () async {
+                  // Debug: mark when user pressed the save button
+                  if (kDebugMode) debugPrint('Save button pressed');
                   // Build items list from available selection fields first
                   List<String> items = [];
 
@@ -358,18 +360,28 @@ class Calculate3Page extends StatelessWidget {
                   // Save: if logged in, send flat payload to backend; otherwise persist guest
                   bool saved = false;
                   try {
+                    if (kDebugMode) debugPrint('Calling saveSelection with payload: ${jsonEncode(payload)}');
                     if (auth.isLoggedIn) {
                       saved = await auth.saveSelection(payload);
+                      if (kDebugMode) debugPrint('saveSelection returned: $saved');
                     } else if (auth.isGuest) {
+                      if (kDebugMode) debugPrint('Saving guest selections (in-memory)');
                       await auth.saveGuestSelections(payload);
+                      if (kDebugMode) debugPrint('saveGuestSelections done');
                       // IMPORTANT: do not persist permanent guest locks here.
                       // We only want an in-memory session lock so closing the app
                       // allows editing again. Do not call `markGuestUsed()`.
                       saved = true;
                     }
-                  } catch (_) {
+                  } catch (e, st) {
+                    if (kDebugMode) {
+                      debugPrint('saveSelection error: $e');
+                      debugPrint('$st');
+                    }
                     saved = false;
                   }
+
+                  if (kDebugMode) debugPrint('Save result: $saved');
 
                   if (saved) {
                     // Inform the user and navigate to History so they can verify
