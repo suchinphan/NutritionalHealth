@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/foundation.dart'
-  show kIsWeb, defaultTargetPlatform, TargetPlatform;
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import '../services/app_config.dart';
 import 'login_page.dart';
 import 'register_login_page.dart';
@@ -81,7 +81,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         final data = jsonDecode(resp.body) as Map<String, dynamic>?;
         final token = data == null ? null : (data['reset_token'] as String?);
         final otp = data == null ? null : (data['otp'] as String?);
-        final respUsername = data == null ? null : (data['username'] as String?);
+        final respUsername = data == null
+            ? null
+            : (data['username'] as String?);
         final respEmail = data == null ? null : (data['email'] as String?);
 
         if (token == null || token.isEmpty) {
@@ -141,8 +143,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 children: [
                   TextButton.icon(
                     onPressed: () async {
-                      await Clipboard.setData(
-                          ClipboardData(text: token));
+                      await Clipboard.setData(ClipboardData(text: token));
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('คัดลอกแล้ว')),
@@ -158,7 +159,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       Navigator.of(context).pushReplacement(
                         MaterialPageRoute(
                           builder: (_) => ChangePasswordPage(
-                            initialUsername: respUsername ?? _userCtrl.text.trim(),
+                            initialUsername:
+                                respUsername ?? _userCtrl.text.trim(),
                             initialEmail: respEmail ?? _emailCtrl.text.trim(),
                             initialToken: token,
                             initialOtp: otp,
@@ -182,8 +184,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           }
         } catch (_) {}
 
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(msg)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
       }
     } catch (e) {
       if (!mounted) return;
@@ -203,10 +206,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         color: Colors.grey[300],
         borderRadius: BorderRadius.circular(24),
       ),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: child,
-      ),
+      child: Align(alignment: Alignment.centerLeft, child: child),
     );
   }
 
@@ -219,16 +219,11 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         elevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => const RegisterLoginPage(),
-            ),
+            MaterialPageRoute(builder: (_) => const RegisterLoginPage()),
           ),
           icon: Icon(Icons.arrow_back, color: primaryGreen),
         ),
-        title: Text(
-          'ลืมรหัสผ่าน',
-          style: TextStyle(color: primaryGreen),
-        ),
+        title: Text('ลืมรหัสผ่าน', style: TextStyle(color: primaryGreen)),
       ),
       body: Padding(
         padding: const EdgeInsets.all(12.0),
@@ -253,7 +248,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                     child: TextFormField(
                       controller: _userCtrl,
                       decoration: const InputDecoration.collapsed(
-                          hintText: 'ชื่อผู้ใช้งาน'),
+                        hintText: 'ชื่อผู้ใช้งาน',
+                      ),
                       validator: (v) {
                         final s = (v ?? '').trim();
                         if (s.isEmpty) {
@@ -276,12 +272,14 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       controller: _emailCtrl,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration.collapsed(
-                          hintText: 'อีเมล์'),
+                        hintText: 'อีเมล์',
+                      ),
                       validator: (v) {
                         final s = (v ?? '').trim();
                         if (s.isEmpty) return 'กรุณากรอกอีเมล์';
-                        final emailRegex =
-                            RegExp(r"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+                        final emailRegex = RegExp(
+                          r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+                        );
                         if (!emailRegex.hasMatch(s)) {
                           return 'รูปแบบอีเมล์ไม่ถูกต้อง';
                         }
@@ -300,8 +298,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 onPressed: _loading
                     ? null
                     : () {
-                        if (_formKey.currentState?.validate() ??
-                            false) {
+                        if (_formKey.currentState?.validate() ?? false) {
                           _onSubmit();
                         }
                       },
@@ -323,10 +320,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       )
                     : const Text(
                         'ตกลง',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
+                        style: TextStyle(color: Colors.white, fontSize: 16),
                       ),
               ),
             ),

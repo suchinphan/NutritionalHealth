@@ -30,12 +30,26 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
 
     if (widget.calories != null) {
       _totalCalories = int.tryParse(widget.calories!) ?? 0;
+      // If the caller already provided a non-zero calories value,
+      // run the analysis immediately so the UI shows the analysis text
+      // before any backend lookup completes.
+      if (_totalCalories > 0) {
+        _analyzeCalories();
+      }
     }
 
     if (widget.items != null && widget.items!.isNotEmpty) {
+      // ✅ Source of truth is the Calculate page results
       _prepareItems(widget.items!);
     } else {
-      _fetchFromBackend(); // ✅ เรียก backend ถ้าไม่มี items
+      final auth = AuthService();
+      // Only fallback to history when a logged-in user arrives without items
+      if (!auth.isGuest) {
+        _fetchFromBackend();
+      } else {
+        // Guest has no history — do not call backend
+        _loading = false;
+      }
     }
   }
 
@@ -65,70 +79,35 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
     int total = 0;
 
     try {
-      final files = await CsvLoader.listBackendCsvFiles();
-
-      for (var name in names) {
-        int? kcal;
-
-        for (var f in files) {
-          try {
-            final info = await CsvLoader.loadCsvRows(f);
-            final header = info['header'] as String?;
-            final rows = info['rows'] as List<List<String>>;
-
-            int nameCol = -1;
-            int kcalCol = -1;
-
-            if (header != null) {
-              final headers = header
-                  .split(',')
-                  .map((s) => s.trim().toLowerCase())
-                  .toList();
-
-              for (var i = 0; i < headers.length; i++) {
-                final h = headers[i];
-                if (nameCol < 0 &&
-                    (h.contains('name') ||
-                        h.contains('food') ||
-                        h.contains('th_name') ||
-                        h.contains('ชื่อ') ||
-                        h.contains('item'))) {
-                  nameCol = i;
-                }
-                if (kcalCol < 0 &&
-                    (h.contains('calor') ||
-                        h.contains('kcal') ||
-                        h.contains('energy'))) {
-                  kcalCol = i;
-                }
-              }
-            }
-
-            if (nameCol >= 0) {
-              for (var r in rows) {
-                if (nameCol >= r.length) continue;
-
-                if (r[nameCol]
-                    .toLowerCase()
-                    .contains(name.toLowerCase())) {
-                  if (kcalCol >= 0 && kcalCol < r.length) {
-                    final v = double.tryParse(
-                        r[kcalCol].replaceAll('"', '').trim());
-                    if (v != null) {
-                      kcal = v.round();
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-
-            if (kcal != null) break;
-          } catch (_) {}
+      // Use backend batch lookup endpoint to resolve kcal per item
+      final apiBase = kIsWeb
+          ? 'http://127.0.0.1:5000'
+          : (defaultTargetPlatform == TargetPlatform.android
+                ? 'http://10.0.2.2:5000'
+                : 'http://127.0.0.1:5000');
+      final url = Uri.parse('$apiBase/menu-info');
+      final resp = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'names': names}),
+      );
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final j = jsonDecode(resp.body) as Map<String, dynamic>;
+        try {
+          debugPrint('menu-info response keys: ${j.keys.toList()}');
+        } catch (_) {}
+        final items = (j['items'] as List<dynamic>?) ?? [];
+        debugPrint('menu-info items length: ${items.length}');
+        for (var it in items) {
+          final nm = it['name']?.toString() ?? '';
+          final kcal = it['kcal'] == null
+              ? null
+              : (it['kcal'] is num
+                    ? (it['kcal'] as num).toInt()
+                    : int.tryParse(it['kcal'].toString()));
+          out.add({'name': nm, 'kcal': kcal});
+          if (kcal != null) total += kcal;
         }
-
-        out.add({'name': name, 'kcal': kcal});
-        if (kcal != null) total += kcal;
       }
     } catch (_) {}
 
@@ -148,6 +127,12 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
     setState(() => _loading = true);
 
     final auth = AuthService();
+    // If the current session is a guest, skip calling history API — guests
+    // don't have backend history. Use passed-in items from calculate instead.
+    if (auth.isGuest) {
+      setState(() => _loading = false);
+      return;
+    }
     final user = auth.user;
     final token = auth.token;
 
@@ -161,8 +146,8 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
     final String apiBase = kIsWeb
         ? 'http://127.0.0.1:5000'
         : (defaultTargetPlatform == TargetPlatform.android
-            ? 'http://10.0.2.2:5000'
-            : 'http://127.0.0.1:5000');
+              ? 'http://10.0.2.2:5000'
+              : 'http://127.0.0.1:5000');
 
     final url = Uri.parse('$apiBase/history/$userId');
 
@@ -171,7 +156,7 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
         url,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token'
+          'Authorization': 'Bearer $token',
         },
       );
 
@@ -208,12 +193,29 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final displayCalories =
-        widget.calories ?? _totalCalories.toString();
+    // Prefer the computed `_totalCalories` when it is available (>0).
+    // If `_totalCalories` is zero (no backend result yet), fall back
+    // to a non-zero `widget.calories` if provided; otherwise show 0.
+    final displayCalories = (_totalCalories > 0)
+        ? _totalCalories.toString()
+        : ((widget.calories != null &&
+                  (int.tryParse(widget.calories!) ?? 0) > 0)
+              ? widget.calories!
+              : _totalCalories.toString());
 
     final selMenu = (widget.items != null && widget.items!.isNotEmpty)
         ? widget.items!.join(', ')
         : '-';
+
+    final auth = AuthService();
+    final displayName = auth.isGuest
+        ? 'Guest'
+        : (auth.user?['username'] ??
+              auth.user?['name'] ??
+              (auth.user?['email'] != null
+                  ? auth.user!['email'].toString().split('@').first
+                  : '') ??
+              '');
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -221,10 +223,21 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: IconThemeData(color: primaryGreen),
-        title: Text(
-          'แสดงรายการอาหาร',
-          style: TextStyle(color: primaryGreen),
-        ),
+        title: Text('แสดงรายการอาหาร', style: TextStyle(color: primaryGreen)),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(
+              child: Text(
+                displayName,
+                style: TextStyle(
+                  color: primaryGreen,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(12),
@@ -234,9 +247,10 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
             Text(
               'ผลลัพธ์การคำนวณ',
               style: TextStyle(
-                  color: primaryGreen,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700),
+                color: primaryGreen,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 8),
             Text('พลังงานรวมที่คำนวณ: $displayCalories kcal'),
@@ -254,8 +268,7 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
             const SizedBox(height: 16),
             Text(
               'รายการที่แนะนำ',
-              style:
-                  const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
 
@@ -263,22 +276,21 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _items.isEmpty
-                      ? const Center(child: Text('ไม่พบข้อมูล'))
-                      : ListView.separated(
-                          itemCount: _items.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(),
-                          itemBuilder: (context, index) {
-                            final it = _items[index];
-                            final kcal = it['kcal'];
-                            return ListTile(
-                              title: Text(it['name']),
-                              trailing: kcal != null
-                                  ? Text('${kcal} kcal')
-                                  : const SizedBox.shrink(),
-                            );
-                          },
-                        ),
+                  ? const Center(child: Text('ไม่พบข้อมูล'))
+                  : ListView.separated(
+                      itemCount: _items.length,
+                      separatorBuilder: (_, __) => const Divider(),
+                      itemBuilder: (context, index) {
+                        final it = _items[index];
+                        final kcal = it['kcal'];
+                        return ListTile(
+                          title: Text(it['name']),
+                          trailing: kcal != null
+                              ? Text('${kcal} kcal')
+                              : const SizedBox.shrink(),
+                        );
+                      },
+                    ),
             ),
 
             const SizedBox(height: 12),
@@ -287,20 +299,18 @@ class _ShowFoodItemsPageState extends State<ShowFoodItemsPage> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  Navigator.of(context)
-                      .popUntil((route) => route.isFirst);
+                  Navigator.of(context).popUntil((route) => route.isFirst);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryGreen,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: const Text(
                   'ตกลง',
-                  style:
-                      TextStyle(color: Colors.white, fontSize: 16),
+                  style: TextStyle(color: Colors.white, fontSize: 16),
                 ),
               ),
             ),

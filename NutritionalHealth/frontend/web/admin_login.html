@@ -45,63 +45,77 @@
     const apiBase = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://127.0.0.1:5000' : window.location.origin;
 
     // Auth helpers: persist in localStorage if remember, otherwise sessionStorage
-    function saveAuth(secret, remember){
-      const data = { secret };
-      if(remember) localStorage.setItem('admin_auth', JSON.stringify(data));
-      else sessionStorage.setItem('admin_auth', JSON.stringify(data));
-    }
-    function clearAuth(){ localStorage.removeItem('admin_auth'); sessionStorage.removeItem('admin_auth'); }
-    function getSavedSecret(){
-      const a = localStorage.getItem('admin_auth') || sessionStorage.getItem('admin_auth');
-      if(!a) return null; try{ return JSON.parse(a).secret }catch(e){return null}
-    }
-
-    async function checkAdminSecret(secret){
-      // Try to validate by calling /admin/reports with X-Admin-Secret header
-      try{
-        const resp = await fetch(apiBase + '/admin/reports', { headers: { 'X-Admin-Secret': secret }, method: 'GET' });
-        if(resp.ok) return { ok:true, offline:false };
-        if(resp.status === 403) return { ok:false, message:'ไม่ผ่านการยืนยัน (403)'};
-        // other non-OK statuses: still consider false
-        return { ok:false, message:'Error ' + resp.status };
-      }catch(err){
-        // network error (backend may not be running) -> allow offline mode but indicate it
-        return { ok:true, offline:true };
+      // Auth helpers: persist admin marker in localStorage
+      function saveAdmin(obj, remember){
+        const data = obj || {};
+        if(remember) localStorage.setItem('admin', JSON.stringify(data));
+        else sessionStorage.setItem('admin', JSON.stringify(data));
       }
-    }
+      function clearAdmin(){ localStorage.removeItem('admin'); sessionStorage.removeItem('admin'); }
+      function getSavedAdmin(){
+        const a = localStorage.getItem('admin') || sessionStorage.getItem('admin');
+        if(!a) return null; try{ return JSON.parse(a) }catch(e){return null}
+      }
 
-    // Render login form
-    function renderLogin(message){
-      const app = document.getElementById('app');
-      app.innerHTML = `
-        <div class="login-card">
-          <h2>เข้าสู่ระบบผู้ดูแลระบบ</h2>
-          <div class="notice">กรุณาใส่ Admin secret เพื่อเข้าสู่ระบบ (สำหรับทดสอบท้องถิ่น ใช้ secret เดียวกับ backend)</div>
-          <input id="admin_secret" class="input" type="password" placeholder="Admin secret">
-          <label><input id="remember" type="checkbox"> จดจำบนเครื่องนี้</label>
-          <div style="height:10px"></div>
-          <div class="row"><button id="loginBtn" class="btn">เข้าสู่ระบบ</button> <button id="logoutBtn" class="btn" style="background:#888">ล้างข้อมูล</button></div>
-          <div style="margin-top:10px;color:#666">${message?message:''}</div>
-        </div>
-      `;
-      document.getElementById('loginBtn').addEventListener('click', async ()=>{
-        const secret = document.getElementById('admin_secret').value.trim();
-        const remember = document.getElementById('remember').checked;
-        if(!secret){ alert('กรุณาใส่ admin secret'); return; }
-        const info = await checkAdminSecret(secret);
-        if(info.ok){ saveAuth(secret, remember); renderMain(info.offline); }
-        else{ renderLogin('ล้มเหลว: ' + (info.message || 'ไม่ทราบสาเหตุ')); }
-      });
-      document.getElementById('logoutBtn').addEventListener('click', ()=>{ clearAuth(); alert('ข้อมูลถูกล้าง'); });
-    }
+      // Render login form (username/password)
+      function renderLogin(message){
+        const app = document.getElementById('app');
+        app.innerHTML = `
+          <div class="login-card">
+            <h2>เข้าสู่ระบบผู้ดูแลระบบ</h2>
+            <div class="notice">เฉพาะบัญชีผู้ดูแลระบบเท่านั้น (is_admin = 1). ผู้ใช้ทั่วไปที่สมัครใช้งานจะเข้าสู่ระบบนี้ไม่ได้</div>
+            <input id="username" class="input" type="text" placeholder="ชื่อผู้ใช้งาน">
+            <input id="password" class="input" type="password" placeholder="รหัสผ่าน">
+            <label><input id="remember" type="checkbox"> จดจำบนเครื่องนี้</label>
+            <div style="height:10px"></div>
+            <div class="row"><button id="loginBtn" class="btn">เข้าสู่ระบบ</button> <button id="logoutBtn" class="btn" style="background:#888">ล้างข้อมูล</button></div>
+            <div style="margin-top:10px;color:#666">${message?message:''}</div>
+          </div>
+        `;
+        document.getElementById('loginBtn').addEventListener('click', async ()=>{
+          const username = document.getElementById('username').value.trim();
+          const password = document.getElementById('password').value;
+          const remember = document.getElementById('remember').checked;
+          if(!username || !password){ alert('กรุณาใส่ชื่อผู้ใช้และรหัสผ่าน'); return; }
+
+          try{
+            const resp = await fetch(apiBase + '/admin/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username, password }),
+              credentials: 'same-origin'
+            });
+
+            if(resp.status === 200){
+              const data = await resp.json();
+              // persist minimal admin marker
+              saveAdmin({ id: data.id, username: data.username, is_admin: 1 }, remember);
+              // redirect to admin main hub
+              window.location.href = 'admin_main.html';
+              return;
+            }
+
+            if(resp.status === 401 || resp.status === 403){
+              renderLogin('ไม่สามารถเข้าสู่ระบบ: ชื่อผู้ใช้/รหัสผ่านไม่ถูกต้องหรือไม่มีสิทธิ์');
+              return;
+            }
+
+            renderLogin('เกิดข้อผิดพลาด: ' + resp.status);
+          }catch(err){
+            console.error(err);
+            renderLogin('เครือข่ายไม่พร้อมหรือ backend ไม่ทำงาน');
+          }
+        });
+        document.getElementById('logoutBtn').addEventListener('click', ()=>{ clearAdmin(); alert('ข้อมูลถูกล้าง'); });
+      }
 
     // Main admin UI
     const items = [
       {id:'class_food', label:'คลาสอาหาร', href:'admin_class_food.html'},
       {id:'menu_food', label:'เมนูอาหาร', href:'admin_menu_food.html'},
-      {id:'personal', label:'กรอกข้อมูลส่วนบุคคล', href:'admin_personal_info.html'},
-      {id:'history', label:'ประวัติการกรอกข้อมูล', href:'admin_history.html'},
-      {id:'report', label:'รายงานปัญหา', href:'admin_reports.html'}
+      {id:'personal', label:'กรอกข้อมูลส่วนบุคคล', href:'admin_member_information.html'},
+      {id:'history', label:'ประวัติการกรอกข้อมูล', href:'admin_history_user.html'},
+      {id:'report', label:'รายงานปัญหา', href:'admin_reports_user.html'}
     ];
 
     const stateKey = 'admin_states_v1';
@@ -116,7 +130,7 @@
         <div class="grid" id="grid"></div>
         <div class="bottom-nav"><div>🏠</div><div>🔍</div><div>📋</div></div>
       `;
-      document.getElementById('logout').addEventListener('click', ()=>{ clearAuth(); location.reload(); });
+      document.getElementById('logout').addEventListener('click', ()=>{ clearAdmin(); location.reload(); });
       document.getElementById('q').addEventListener('input', renderGrid);
       renderGrid();
     }
@@ -145,17 +159,16 @@
     }
 
     // Boot: check saved secret and validate
-    (async function(){
-      const secret = getSavedSecret();
-      if(secret){
-        const info = await checkAdminSecret(secret);
-        if(info.ok){ renderMain(info.offline); return; }
-        // invalid saved secret -> clear and show login
-        clearAuth(); renderLogin('secret เก่าไม่ถูกต้อง');
-      } else {
-        renderLogin('');
-      }
-    })();
+      // Boot: check saved admin marker and show appropriate screen
+      (function(){
+        const admin = getSavedAdmin();
+        if(admin && admin.is_admin === 1){
+          // assume backend session established or frontend-only admin marker
+          renderMain(false);
+        } else {
+          renderLogin('');
+        }
+      })();
   </script>
 </body>
 </html>

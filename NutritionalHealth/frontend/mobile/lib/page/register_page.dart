@@ -27,8 +27,8 @@ class _RegisterPageState extends State<RegisterPage> {
   final String apiBase = kIsWeb
       ? 'http://127.0.0.1:5000'
       : (defaultTargetPlatform == TargetPlatform.android
-          ? 'http://10.0.2.2:5000'
-          : 'http://127.0.0.1:5000');
+            ? 'http://10.0.2.2:5000'
+            : 'http://127.0.0.1:5000');
 
   @override
   void dispose() {
@@ -45,8 +45,7 @@ class _RegisterPageState extends State<RegisterPage> {
       hintStyle: TextStyle(color: Colors.grey[500]),
       filled: true,
       fillColor: Colors.grey[200],
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(24),
         borderSide: BorderSide.none,
@@ -65,35 +64,42 @@ class _RegisterPageState extends State<RegisterPage> {
 
     if (user.length < 4) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ชื่อผู้ใช้อย่างน้อย 4 ตัวอักษร')));
+        const SnackBar(content: Text('ชื่อผู้ใช้อย่างน้อย 4 ตัวอักษร')),
+      );
       return;
     }
 
     final emailReg = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
     if (!emailReg.hasMatch(email)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('กรุณากรอกอีเมลให้ถูกต้อง')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('กรุณากรอกอีเมลให้ถูกต้อง')));
       return;
     }
 
     if (pass.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')));
+        const SnackBar(content: Text('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')),
+      );
       return;
     }
 
-    final reg =
-        RegExp(r'(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9])');
+    final reg = RegExp(r'(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9])');
     if (!reg.hasMatch(pass)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
           content: Text(
-              'รหัสผ่านต้องมีตัวพิมพ์ใหญ่, พิมพ์เล็ก, ตัวเลข และอักขระพิเศษ')));
+            'รหัสผ่านต้องมีตัวพิมพ์ใหญ่, พิมพ์เล็ก, ตัวเลข และอักขระพิเศษ',
+          ),
+        ),
+      );
       return;
     }
 
     if (pass != confirm) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('กรุณายืนยันรหัสผ่านให้ตรงกัน')));
+        const SnackBar(content: Text('กรุณายืนยันรหัสผ่านให้ตรงกัน')),
+      );
       return;
     }
 
@@ -110,7 +116,7 @@ class _RegisterPageState extends State<RegisterPage> {
               'username': user,
               'email': email,
               'password': pass,
-              'confirm_password': confirm
+              'confirm_password': confirm,
             }),
           )
           .timeout(const Duration(seconds: 10));
@@ -120,30 +126,30 @@ class _RegisterPageState extends State<RegisterPage> {
           resp.body.isNotEmpty) {
         final j = jsonDecode(resp.body);
 
-        final token = j['token'] ??
+        final token =
+            j['token'] ??
             j['authToken'] ??
             j['password_token'] ??
             (j['data'] != null ? j['data']['authToken'] : null);
 
-        final id = j['user_id'] ??
+        final id =
+            j['user_id'] ??
             j['id'] ??
             (j['data'] != null ? j['data']['userid'] : null);
 
         if (token != null && id != null) {
-          await AuthService().handleAuthSuccess(
-            token,
-            {
-              'id': id,
-              'username': j['username'] ?? user,
-              'email': j['email'] ?? email,
-            },
-          );
+          await AuthService().handleAuthSuccess(token, {
+            'id': id,
+            'username': j['username'] ?? user,
+            'email': j['email'] ?? email,
+          });
         }
 
         if (!mounted) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('สมัครสมาชิกเรียบร้อย')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('สมัครสมาชิกเรียบร้อย')));
 
         Navigator.of(context).maybePop();
       } else {
@@ -158,13 +164,15 @@ class _RegisterPageState extends State<RegisterPage> {
         } catch (_) {}
 
         if (!mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(msg)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ไม่สามารถติดต่อเซิร์ฟเวอร์ได้')));
+        const SnackBar(content: Text('ไม่สามารถติดต่อเซิร์ฟเวอร์ได้')),
+      );
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -180,29 +188,25 @@ class _RegisterPageState extends State<RegisterPage> {
         child: Stack(
           children: [
             Padding(
-              padding:
-                  const EdgeInsets.fromLTRB(18, 12, 18, 90),
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 90),
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
                     children: [
                       GestureDetector(
-                        onTap: () =>
-                            Navigator.of(context).maybePop(),
-                        child: Icon(Icons.arrow_back,
-                            color: primaryGreen),
+                        onTap: () => Navigator.of(context).maybePop(),
+                        child: Icon(Icons.arrow_back, color: primaryGreen),
                       ),
                       Expanded(
                         child: Center(
                           child: Text(
                             'สมัครสมาชิก',
                             style: TextStyle(
-                                color: primaryGreen,
-                                fontSize: 18,
-                                fontWeight:
-                                    FontWeight.w600),
+                              color: primaryGreen,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
@@ -213,17 +217,14 @@ class _RegisterPageState extends State<RegisterPage> {
                   TextField(
                     controller: _userController,
                     textInputAction: TextInputAction.next,
-                    decoration:
-                        _inputDecoration('ชื่อผู้ใช้งาน'),
+                    decoration: _inputDecoration('ชื่อผู้ใช้งาน'),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _emailController,
-                    keyboardType:
-                        TextInputType.emailAddress,
+                    keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
-                    decoration:
-                        _inputDecoration('อีเมล'),
+                    decoration: _inputDecoration('อีเมล'),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -233,9 +234,8 @@ class _RegisterPageState extends State<RegisterPage> {
                     decoration: _inputDecoration(
                       'รหัสผ่าน',
                       suffix: GestureDetector(
-                        onTap: () => setState(() =>
-                            _obscurePass =
-                                !_obscurePass),
+                        onTap: () =>
+                            setState(() => _obscurePass = !_obscurePass),
                         child: Icon(
                           _obscurePass
                               ? Icons.visibility_off
@@ -254,9 +254,8 @@ class _RegisterPageState extends State<RegisterPage> {
                     decoration: _inputDecoration(
                       'ยืนยันรหัสผ่าน',
                       suffix: GestureDetector(
-                        onTap: () => setState(() =>
-                            _obscureConfirm =
-                                !_obscureConfirm),
+                        onTap: () =>
+                            setState(() => _obscureConfirm = !_obscureConfirm),
                         child: Icon(
                           _obscureConfirm
                               ? Icons.visibility_off
@@ -287,9 +286,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         )
                       : const Text(
                           'สมัครสมาชิก',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16),
+                          style: TextStyle(color: Colors.white, fontSize: 16),
                         ),
                 ),
               ),

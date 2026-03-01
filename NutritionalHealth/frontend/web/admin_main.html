@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>แสดงรายการอาหาร (Admin)</title>
+  <style>
+    :root{--green:#00C700;--muted:#f6f6f6}
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#fff;color:#222}
+    .top{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #eee}
+    .back{color:var(--green);text-decoration:none;font-weight:700;font-size:22px;margin-right:8px}
+    .title{color:var(--green);font-weight:700;font-size:18px}
+    .container{padding:16px}
+    .item{padding:12px;border-radius:8px;border:1px solid #eee;margin-bottom:10px;background:#fafafa}
+    .item h4{margin:0 0 6px 0;color:var(--green)}
+    .btn{padding:8px 10px;border-radius:6px;border:none;background:var(--green);color:#fff}
+  </style>
+</head>
+<body>
+  <div class="top-row">
+    <div class="left">
+      <div class="logo">Admin</div>
+    </div>
+    <div class="center">
+      <input id="q" class="search" placeholder="ค้นหา....">
+    </div>
+    <div class="right">
+      <button id="logoutBtn" class="small-link">ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <main class="card-shell">
+    <h3 class="page-title">หมวดหมู๋ทั้งหมด</h3>
+    <div class="grid" id="grid"></div>
+  </main>
+
+  <script src="check-admin.js"></script>
+  <script>
+    const items = [
+      { id:'class_food', label:'คลาสอาหาร', href:'admin_manage_food_categories.html', icon:'📚' },
+      { id:'menu_food', label:'เมนูอาหาร', href:'admin_menu_food.html', icon:'🍽️' },
+      { id:'personal', label:'กรอกข้อมูลส่วนบุคคล', href:'admin_member_information.html', icon:'📝' },
+      { id:'history', label:'ประวัติการกรอกข้อมูล', href:'admin_history_user.html', icon:'📜' },
+      { id:'report', label:'รายงานปัญหา', href:'admin_reports_user.html', icon:'🚩' }
+    ];
+
+    function renderGrid(){
+      const grid = document.getElementById('grid'); grid.innerHTML = '';
+      const q = document.getElementById('q').value.trim().toLowerCase();
+      items.filter(it => !q || it.label.includes(q)).forEach(it => {
+        const c = document.createElement('div'); c.className = 'card'; c.tabIndex = 0;
+        c.addEventListener('click', ()=> window.location.href = it.href);
+        const ic = document.createElement('div'); ic.className='icon'; ic.textContent = it.icon;
+        const lbl = document.createElement('div'); lbl.className='label'; lbl.textContent = it.label;
+        c.appendChild(ic); c.appendChild(lbl);
+        grid.appendChild(c);
+      });
+    }
+
+    document.getElementById('q').addEventListener('input', renderGrid);
+    document.getElementById('logoutBtn').addEventListener('click', ()=>{ localStorage.removeItem('admin'); sessionStorage.removeItem('admin'); location.href='admin_login.html'; });
+
+    // initial render
+    renderGrid();
+  </script>
+</body>
+</html>

@@ -22,40 +22,126 @@
     <div class="title">เมนูอาหาร</div>
   </div>
   <div class="container">
-    <label>เมนูอาหาร</label>
-    <input id="menu_name" placeholder="เมนูอาหาร">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+      <input id="search_menu" placeholder="ค้นหาเมนูอาหาร (ตัวอย่าง: ข้าวผัด)" style="flex:1;padding:10px;border-radius:8px;border:1px solid #eee;background:var(--muted)">
+      <button id="btnAdd" class="btn" style="width:160px;max-width:40%">เพิ่มเมนูใหม่</button>
+    </div>
 
-    <label>หมวดอาหาร</label>
-    <input id="category" placeholder="โปรดระบุหมวดอาหาร">
+    <div id="message" style="color:#666;margin-bottom:8px"></div>
 
-    <label>ประเภทอาหาร</label>
-    <input id="type" placeholder="โปรดระบุประเภทอาหาร">
+    <table id="tbl" style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="text-align:left;color:var(--green)"><th style="padding:8px;border-bottom:1px solid #eee">ชื่อเมนู</th><th style="padding:8px;border-bottom:1px solid #eee">หมวด</th><th style="padding:8px;border-bottom:1px solid #eee">แคลอรี่</th><th style="padding:8px;border-bottom:1px solid #eee">Action</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  
+    <!-- Modal (simple) -->
+    <div id="modal" style="display:none;position:fixed;left:0;right:0;top:0;bottom:0;background:rgba(0,0,0,0.4);align-items:center;justify-content:center">
+      <div style="background:#fff;padding:18px;border-radius:8px;max-width:520px;width:92%">
+        <h3 style="margin-top:0;color:var(--green)">เพิ่ม/แก้ไข เมนู</h3>
+        <label style="color:var(--green);font-weight:600">ชื่อเมนู</label>
+        <input id="m_name" style="width:100%;padding:10px;margin-top:8px;border-radius:6px;border:1px solid #eee">
+        <label style="color:var(--green);font-weight:600;margin-top:8px;display:block">หมวดอาหาร (category_id)</label>
+        <input id="m_cat" style="width:100%;padding:10px;margin-top:8px;border-radius:6px;border:1px solid #eee">
+        <label style="color:var(--green);font-weight:600;margin-top:8px;display:block">แคลอรี่</label>
+        <input id="m_cal" style="width:100%;padding:10px;margin-top:8px;border-radius:6px;border:1px solid #eee">
+        <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+          <button id="modalCancel" class="btn" style="background:#999;width:120px">ยกเลิก</button>
+          <button id="modalSave" class="btn" style="width:120px">บันทึก</button>
+        </div>
+      </div>
+    </div>
 
-    <label>ช่วงพลังงาน</label>
-    <input id="energy" placeholder="โปรดระบุช่วงพลังงานและแคลอรี่">
-
-    <label>ค้นหาเมนูอาหาร</label>
-    <input id="search_menu" placeholder="ค้นหาเมนูอาหาร (ตัวอย่าง: ข้าวผัด)">
-
-    <button class="btn" id="save">ตกลง</button>
   </div>
 
+  <script src="check-admin.js"></script>
   <script>
-    document.getElementById('save').addEventListener('click', ()=>{
-      // เก็บชั่วคราวใน localStorage เป็นตัวอย่าง
-      const data = {
-        menu: document.getElementById('menu_name').value.trim(),
-        category: document.getElementById('category').value.trim(),
-        type: document.getElementById('type').value.trim(),
-        energy: document.getElementById('energy').value.trim()
-      };
-      const key = 'admin_menu_entries';
-      const arr = JSON.parse(localStorage.getItem(key) || '[]');
-      arr.push(data);
-      localStorage.setItem(key, JSON.stringify(arr));
-      alert('บันทึกชั่วคราวแล้ว');
-      window.location.href = 'admin.html';
+    const apiBase = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://127.0.0.1:5000' : window.location.origin;
+
+    const tbody = document.getElementById('tbody');
+    const msg = document.getElementById('message');
+
+    async function loadMenus(){
+      msg.textContent = 'Loading...';
+      try{
+        const res = await fetch(apiBase + '/admin/food-menus', { credentials: 'same-origin' });
+        if(res.status === 403){ msg.textContent = 'Access denied'; return; }
+        if(!res.ok){ msg.textContent = 'Error: ' + res.status; return; }
+        const data = await res.json();
+        renderTable(data);
+        msg.textContent = '';
+      }catch(err){ console.error(err); msg.textContent = 'ไม่สามารถติดต่อ backend ได้'; }
+    }
+
+    function renderTable(data){
+      tbody.innerHTML = '';
+      if(!data || data.length===0){ tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;color:#666">ยังไม่มีเมนู</td></tr>'; return; }
+      data.forEach(d => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(d.name||'')}</td><td style="padding:8px;border-bottom:1px solid #eee">${d.category||''}</td><td style="padding:8px;border-bottom:1px solid #eee">${d.calories||''}</td><td style="padding:8px;border-bottom:1px solid #eee"></td>`;
+        const actions = document.createElement('div');
+        const edit = document.createElement('button'); edit.textContent='แก้ไข'; edit.className='btn'; edit.style.width='80px'; edit.style.marginRight='8px'; edit.addEventListener('click', ()=> openModal(d));
+        const del = document.createElement('button'); del.textContent='ลบ'; del.className='btn'; del.style.background='#e53935'; del.style.width='80px'; del.addEventListener('click', ()=> delMenu(d.id));
+        tr.cells[3].appendChild(edit); tr.cells[3].appendChild(del);
+        tbody.appendChild(tr);
+      });
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"})[c]); }
+
+    // Modal handling
+    const modal = document.getElementById('modal');
+    const m_name = document.getElementById('m_name');
+    const m_cat = document.getElementById('m_cat');
+    const m_cal = document.getElementById('m_cal');
+    let editingId = null;
+
+    document.getElementById('btnAdd').addEventListener('click', ()=> openModal());
+    document.getElementById('modalCancel').addEventListener('click', ()=> { modal.style.display='none'; editingId=null; });
+    document.getElementById('modalSave').addEventListener('click', saveModal);
+
+    function openModal(item){
+      editingId = item ? item.id : null;
+      m_name.value = item ? item.name || '' : '';
+      m_cat.value = item ? (item.category_id || '') : '';
+      m_cal.value = item ? (item.calories || '') : '';
+      modal.style.display = 'flex';
+    }
+
+    async function saveModal(){
+      const payload = { name: m_name.value.trim(), category_id: m_cat.value || null, calories: parseFloat(m_cal.value) || 0 };
+      try{
+        let res;
+        if(editingId){
+          res = await fetch(apiBase + '/admin/food-menus/' + editingId, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload), credentials: 'same-origin' });
+        } else {
+          res = await fetch(apiBase + '/admin/food-menus', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload), credentials: 'same-origin' });
+        }
+        if(res.status===200 || res.status===201){ modal.style.display='none'; editingId=null; loadMenus(); }
+        else if(res.status===403){ alert('Access denied'); }
+        else { const txt = await res.text(); alert('Error: ' + res.status + '\n' + txt); }
+      }catch(err){ console.error(err); alert('ไม่สามารถติดต่อ backend ได้'); }
+    }
+
+    async function delMenu(id){
+      if(!confirm('ลบเมนูนี้?')) return;
+      try{
+        const res = await fetch(apiBase + '/admin/food-menus/' + id, { method: 'DELETE', credentials: 'same-origin' });
+        if(res.ok){ loadMenus(); } else { alert('Delete failed: ' + res.status); }
+      }catch(err){ console.error(err); alert('ไม่สามารถติดต่อ backend ได้'); }
+    }
+
+    document.getElementById('search_menu').addEventListener('input', ()=>{
+      const q = document.getElementById('search_menu').value.trim().toLowerCase();
+      Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
+        const name = tr.cells[0].textContent.toLowerCase();
+        tr.style.display = (!q || name.includes(q)) ? '' : 'none';
+      });
     });
+
+    // initial load
+    loadMenus();
   </script>
 </body>
 </html>
