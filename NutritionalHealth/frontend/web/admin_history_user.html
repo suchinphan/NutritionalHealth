@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ประวัติการกรอกข้อมูล (Admin)</title>
+  <style>
+    :root{--green:#00C700;--muted:#f6f6f6}
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#fff;color:#222}
+    .top{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #eee}
+    .back{color:var(--green);text-decoration:none;font-weight:700;font-size:22px;margin-right:8px}
+    .title{color:var(--green);font-weight:700;font-size:18px}
+    .container{padding:16px}
+    .entry{padding:12px;border-radius:8px;border:1px solid #eee;margin-bottom:10px;background:#fafafa}
+    .actions{display:flex;gap:8px;margin-top:8px}
+    .btn{padding:8px 10px;border-radius:6px;border:none;background:var(--green);color:#fff}
+    .btn.danger{background:#e53935}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <a href="admin_main.html" class="back">‹</a>
+    <div class="title">ประวัติการกรอกข้อมูล</div>
+  </div>
+  <div class="container">
+    <div id="list"></div>
+    <div style="margin-top:12px"><button id="backBtn" class="btn">กลับหน้าหลัก</button></div>
+  </div>
+
+  <script src="check-admin.js"></script>
+  <script>
+    const listEl = document.getElementById('list');
+    const stateKey = 'user_entries';
+
+    async function loadFromBackend(){
+      const tryUrls = ['/admin/user-history','/admin/histories','/histories','/api/histories'];
+      for(const p of tryUrls){
+        try{
+          const base = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://127.0.0.1:5000' : window.location.origin;
+          const res = await fetch(base + p, { credentials: 'same-origin' });
+          if(res.status === 403) return { forbidden:true };
+          if(res.ok){ const j = await res.json(); return { source: p, data: Array.isArray(j)? j : (j.items || []) }; }
+        }catch(e){ /* ignore */ }
+      }
+      return null;
+    }
+
+    function saveLocal(arr){ localStorage.setItem(stateKey, JSON.stringify(arr)); }
+
+    function renderList(arr){
+      listEl.innerHTML = '';
+      if(!arr || arr.length===0){ listEl.textContent = 'ยังไม่มีประวัติการกรอกข้อมูล'; return; }
+      arr.slice().reverse().forEach(it=>{
+        const el = document.createElement('div'); el.className='entry';
+        const h = document.createElement('div'); h.style.color='var(--green)'; h.style.fontWeight='700'; h.textContent = it.user ? (it.user + ' — ประวัติ') : (it.type? ('['+it.type+']') : 'ข้อมูลผู้ใช้'); el.appendChild(h);
+        const p = document.createElement('pre'); p.style.whiteSpace='pre-wrap'; p.textContent = it.data ? (typeof it.data === 'string' ? it.data : JSON.stringify(it.data,null,2)) : JSON.stringify(it,null,2); el.appendChild(p);
+
+        const actions = document.createElement('div'); actions.className='actions';
+        const ok = document.createElement('button'); ok.className='btn'; ok.textContent='อนุมัติ';
+        const no = document.createElement('button'); no.className='btn danger'; no.textContent='ปฏิเสธ';
+        actions.appendChild(ok); actions.appendChild(no);
+        el.appendChild(actions);
+
+        const status = document.createElement('div'); status.className='note'; status.textContent = it.approved ? 'สถานะ: อนุมัติ' : 'สถานะ: รอดำเนินการ'; el.appendChild(status);
+
+        ok.addEventListener('click', ()=>{
+          it.approved = true; status.textContent = 'สถานะ: อนุมัติ';
+          // persist to local if exists
+          const local = JSON.parse(localStorage.getItem(stateKey) || '[]');
+          const found = local.find(x=>x.id===it.id);
+          if(found){ found.approved = true; saveLocal(local); }
+        });
+
+        no.addEventListener('click', ()=>{
+          if(!confirm('ปฏิเสธและลบรายการนี้?')) return;
+          const local = JSON.parse(localStorage.getItem(stateKey) || '[]');
+          const idx = local.findIndex(x=>x.id===it.id);
+          if(idx>=0){ local.splice(idx,1); saveLocal(local); el.remove(); return; }
+          el.remove();
+        });
+
+        listEl.appendChild(el);
+      });
+    }
+
+    (async function(){
+      // guard is in check-admin.js
+      const backend = await loadFromBackend();
+      if(backend && backend.forbidden){ listEl.textContent = 'Access denied (admin only)'; return; }
+      if(backend && backend.data && backend.data.length){ renderList(backend.data); return; }
+
+      // fallback to localStorage
+      const local = JSON.parse(localStorage.getItem(stateKey) || '[]');
+      if(local.length){ renderList(local); return; }
+
+      // sample data
+      const sample = [ { id: Date.now(), user:'ตัวอย่างผู้ใช้', data: 'ชื่อ: ...\nอายุ: ...\nเมนู: ...', approved:false } ];
+      saveLocal(sample);
+      renderList(sample);
+    })();
+
+    document.getElementById('backBtn').addEventListener('click', ()=>{ window.location.href = 'admin_main.html'; });
+  </script>
+</body>
+</html>

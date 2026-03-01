@@ -26,7 +26,7 @@
 </head>
 <body>
   <div class="top">
-    <a href="admin.html" class="back">‹</a>
+    <a href="admin_main.html" class="back">‹</a>
     <div class="title">รายงานปัญหา</div>
   </div>
 
@@ -42,15 +42,16 @@
     const stateKey = 'user_reports_v1';
 
     async function loadReports(){
-      // Try backend endpoints first
-      const tryUrls = ['/admin/reports','/reports'];
-      for(const p of tryUrls){
-        try{
-          const base = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://127.0.0.1:5000' : window.location.origin;
-          const res = await fetch(base + p);
-          if(res.ok){ const j = await res.json(); return {source:p,data:j}; }
-        }catch(e){/* ignore */}
-      }
+        // Try backend endpoints first (include credentials so session-based admin is used)
+        const tryUrls = ['/admin/reports','/reports'];
+        for(const p of tryUrls){
+          try{
+            const base = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://127.0.0.1:5000' : window.location.origin;
+            const res = await fetch(base + p, { credentials: 'same-origin' });
+            if(res.status === 403) return { source: p, data: [], forbidden: true };
+            if(res.ok){ const j = await res.json(); return {source:p,data:j}; }
+          }catch(e){/* ignore */}
+        }
       // fallback to localStorage
       const local = JSON.parse(localStorage.getItem(stateKey) || '[]');
       if(local.length) return {source:'localStorage', data: local};

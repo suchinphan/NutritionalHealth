@@ -357,7 +357,7 @@ class Calculate3Page extends StatelessWidget {
                     'summary': '''มื้อ: ${displayedMeal}\nระยะเวลา: ${days} วัน\nรับ/วัน: ${intake} kcal\nควรรับ/วัน: ${recommendedPerDay} kcal\nรวมรับ: ${totalIntake} kcal\nรวมควรรับ: ${totalRecommended} kcal\nสถานะ: ${displayedStatus}\nคำอธิบาย: ${generatedDescription}\nเมนูที่เลือก: ${items.join(', ')}''',
                   };
 
-                  // Save: if logged in, send flat payload to backend; otherwise persist guest
+                  // Save: if logged in, send flat payload to backend; if guest -> do NOT call backend, show warning
                   bool saved = false;
                   try {
                     if (kDebugMode) debugPrint('Calling saveSelection with payload: ${jsonEncode(payload)}');
@@ -365,13 +365,12 @@ class Calculate3Page extends StatelessWidget {
                       saved = await auth.saveSelection(payload);
                       if (kDebugMode) debugPrint('saveSelection returned: $saved');
                     } else if (auth.isGuest) {
+                      // Persist guest selections locally only
                       if (kDebugMode) debugPrint('Saving guest selections (in-memory)');
                       await auth.saveGuestSelections(payload);
                       if (kDebugMode) debugPrint('saveGuestSelections done');
-                      // IMPORTANT: do not persist permanent guest locks here.
-                      // We only want an in-memory session lock so closing the app
-                      // allows editing again. Do not call `markGuestUsed()`.
-                      saved = true;
+                      // For Guest: do NOT mark as saved success for DB and do NOT call backend.
+                      saved = false;
                     }
                   } catch (e, st) {
                     if (kDebugMode) {
@@ -381,7 +380,7 @@ class Calculate3Page extends StatelessWidget {
                     saved = false;
                   }
 
-                  if (kDebugMode) debugPrint('Save result: $saved');
+                  if (kDebugMode) debugPrint('Save result: $saved (true == persisted to DB)');
 
                   if (saved) {
                     // Inform the user and navigate to History so they can verify
@@ -393,8 +392,13 @@ class Calculate3Page extends StatelessWidget {
                       );
                     }
                   } else {
+                    // For guests and failed saves: show warning for guests, otherwise generic failure
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('บันทึกไม่สำเร็จ — แสดงผลอย่างเดียว')));
+                      if (auth.isGuest) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ผู้ใช้ Guest ไม่สามารถบันทึกข้อมูลได้')));
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('บันทึกไม่สำเร็จ — แสดงผลอย่างเดียว')));
+                      }
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(

@@ -85,7 +85,7 @@ class _ChooseFoodTypePageState extends State<ChooseFoodTypePage> {
       if (selectedCategoryId != null) await _loadFoodMenus(selectedCategoryId!);
       if (selectedDrinkTypeId != null)
         await _loadDrinkMenus(selectedDrinkTypeId!);
-      if (selectedFoodTypeId == 3) await _loadDesserts();
+      await _loadDesserts();
     } catch (e) {
       debugPrint('Failed to load saved selections: $e');
     }
@@ -293,7 +293,16 @@ class _ChooseFoodTypePageState extends State<ChooseFoodTypePage> {
   }
 
   Future<void> _loadDesserts() async {
-    final res = await api.get("/api/dessert-menus");
+    // Only load desserts when the selected food type is carbs (id == 3)
+    if (selectedFoodTypeId != 3) {
+      setState(() {
+        desserts = [];
+        selectedDessertId = null;
+      });
+      return;
+    }
+
+    final res = await api.get("/api/dessert-menus?food_type_id=$selectedFoodTypeId");
     setState(() {
       // Filter to actual desserts and dedupe by name
       desserts = _sortByName(_filterDesserts(_safeList(res, "desserts")));
@@ -475,9 +484,7 @@ class _ChooseFoodTypePageState extends State<ChooseFoodTypePage> {
                             selectedCategoryId = v;
                           });
                           if (v != null) await _loadFoodMenus(v);
-                          if (selectedFoodTypeId == 3) {
-                            await _loadDesserts();
-                          }
+                          await _loadDesserts();
                         }
                       : null,
                 ),

@@ -366,39 +366,62 @@ def get_food_menus_api():
 @app.route('/api/dessert-menus', methods=['GET'])
 def get_dessert_menus_api():
     try:
-        # Use information_schema to avoid ORM errors when DB schema is legacy
+        # Only return desserts when caller explicitly requests carbs (food_type_id=3).
+        requested_food_type = request.args.get('food_type_id', type=int)
+        if requested_food_type != 3:
+            return jsonify([])
+
+        # Return desserts filtered by category = 'dessert' only.
+        # Response must be a plain list of objects: [{"id": ..., "name": "..."}]
+
+        # 1) Prefer ORM model query when possible
+        name_attr = None
+        if hasattr(DessertMenu, 'dessert_name'):
+            name_attr = 'dessert_name'
+        elif hasattr(DessertMenu, 'name'):
+            name_attr = 'name'
+
+        if name_attr and hasattr(DessertMenu, 'category'):
+            # Use with_entities to only SELECT id and name to avoid referencing
+            # model columns that may not exist in legacy DB schemas (e.g., food_type_id)
+            col_expr = getattr(DessertMenu, name_attr)
+            q = (
+                DessertMenu.query
+                .with_entities(DessertMenu.id, col_expr)
+                .filter(DessertMenu.category == 'dessert')
+                .order_by(col_expr.asc())
+                .limit(500)
+            )
+            rows = q.all()
+            out = [
+                {
+                    'id': int(r[0]) if r[0] is not None else None,
+                    'name': r[1]
+                }
+                for r in rows
+            ]
+            return jsonify(out)
+
+        # 2) Fallback: raw SQL (handles legacy schema). Ensure category column exists.
         schema = db.engine.url.database
         col_q = text("SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema=:schema AND table_name='dessert_menus'")
         cols = {r[0] for r in db.session.execute(col_q, {"schema": schema}).fetchall()}
 
-        # Prefer model-backed query when possible, otherwise fall back to raw SQL
-        try:
-            if hasattr(DessertMenu, 'dessert_name') or hasattr(DessertMenu, 'name'):
-                order_attr = getattr(DessertMenu, 'dessert_name', None) or getattr(DessertMenu, 'name', None)
-                q = DessertMenu.query
-                if order_attr is not None:
-                    q = q.order_by(order_attr.asc())
-                items = q.limit(500).all()
-                out = [getattr(d, 'dessert_name', getattr(d, 'name', '')) for d in items]
-                return jsonify({'items': out})
-        except Exception:
-            app.logger.exception('dessert model-backed fetch failed; falling back to raw SQL')
+        col = 'dessert_name' if 'dessert_name' in cols else ('name' if 'name' in cols else None)
+        if col is None or 'category' not in cols:
+            # Cannot determine dessert rows safely
+            return jsonify([])
 
-        # Fallback: raw SQL using actual DB column names
-        try:
-            col = 'dessert_name' if 'dessert_name' in cols else ('name' if 'name' in cols else None)
-            if col is None:
-                return jsonify({'items': []})
-            sql = text(f"SELECT {col} FROM dessert_menus ORDER BY {col} ASC LIMIT 500")
-            rows = db.session.execute(sql).fetchall()
-            out = [r[0] if r and len(r) > 0 else '' for r in rows]
-            return jsonify({'items': out})
-        except Exception:
-            app.logger.exception('Failed to fetch desserts')
-            return jsonify({'items': []}), 500
+        sql = text(f"SELECT id, {col} AS dessert_name FROM dessert_menus WHERE category = 'dessert' ORDER BY dessert_name ASC LIMIT 500")
+        rows = db.session.execute(sql).fetchall()
+        out = [
+            {'id': int(r[0]) if r[0] is not None else None, 'name': r[1]}
+            for r in rows
+        ]
+        return jsonify(out)
     except Exception:
         app.logger.exception('get_dessert_menus_api error')
-        return jsonify({'error': 'internal'}), 500
+        return jsonify([]), 500
 
 # -----------------------------
 # FOOD TYPES (หน้าเลือกประเภท)
@@ -481,23 +504,157 @@ def get_drink_menus_api():
     except Exception:
         app.logger.exception('get_drink_menus_api error')
         return jsonify({'error': 'internal'}), 500
+
+
+# -----------------------------
+# ADMIN: auth endpoints + guard
+# -----------------------------
+def admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        user_id = session.get('admin_user_id')
+        if not user_id:
+            return jsonify({'error': 'forbidden'}), 403
+        try:
+            user = User.query.get(user_id)
+        except Exception:
+            user = None
+        if not user or not getattr(user, 'is_admin', False):
+            return jsonify({'error': 'forbidden'}), 403
+        # attach user to request for convenience
+        request.admin_user = user
+        return f(*args, **kwargs)
+    return wrapper
+
+
+@limiter.limit("10 per minute")
+@app.route('/admin/login', methods=['POST'])
+def admin_api_login():
+    # Accept JSON or form-encoded
+    data = request.get_json(silent=True) or request.form or {}
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+
+    if not username or not password:
+        return jsonify({'error': 'username and password required'}), 400
+
+    user = User.query.filter(func.lower(User.username) == username.lower()).first()
+    # Do not reveal which part failed
+    if not user or not getattr(user, 'is_admin', False):
+        return jsonify({'error': 'unauthorized'}), 401
+
+    if not check_password_hash(user.password_hash, password):
+        return jsonify({'error': 'unauthorized'}), 401
+
+    # Login success: create session
+    session.clear()
+    session['admin_user_id'] = user.id
+    session.permanent = True
+
+    return jsonify({'id': user.id, 'username': user.username, 'is_admin': 1}), 200
+
+
+# -----------------------------
+# ADMIN: food-menus CRUD
+# -----------------------------
+@limiter.limit("60 per minute")
+@app.route('/admin/food-menus', methods=['GET'])
+@admin_required
+def admin_get_food_menus():
+    try:
+        menus = FoodMenu.query.all()
+        out = []
+        for m in menus:
+            out.append({
+                'id': m.id,
+                'name': m.name,
+                'food_type_id': m.food_type_id,
+                'category_id': m.category_id,
+                'calories': float(m.calories) if m.calories is not None else None,
+                'protein': float(m.protein) if m.protein is not None else None,
+                'carbs': float(m.carbs) if m.carbs is not None else None,
+                'fat': float(m.fat) if m.fat is not None else None,
+                'is_dessert': bool(m.is_dessert)
+            })
+        return jsonify(out)
+    except Exception:
+        app.logger.exception('admin_get_food_menus error')
+        return jsonify({'error': 'internal'}), 500
+
+
+@limiter.limit("30 per minute")
+@app.route('/admin/food-menus', methods=['POST'])
+@admin_required
+def admin_create_food_menu():
+    if not request.is_json:
+        return jsonify({'error': 'JSON required'}), 400
+    data = request.get_json()
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    try:
+        fm = FoodMenu(
+            name=name,
+            food_type_id=data.get('food_type_id'),
+            category_id=data.get('category_id'),
+            calories=data.get('calories') or 0,
+            protein=data.get('protein') or 0,
+            carbs=data.get('carbs') or 0,
+            fat=data.get('fat') or 0,
+            is_dessert=bool(data.get('is_dessert', False))
+        )
+        db.session.add(fm)
+        db.session.commit()
+        return jsonify({'id': fm.id, 'name': fm.name}), 201
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('admin_create_food_menu error')
+        return jsonify({'error': 'internal'}), 500
+
+
+@limiter.limit("30 per minute")
+@app.route('/admin/food-menus/<int:menu_id>', methods=['PUT'])
+@admin_required
+def admin_update_food_menu(menu_id):
+    if not request.is_json:
+        return jsonify({'error': 'JSON required'}), 400
+    data = request.get_json()
+    try:
+        fm = FoodMenu.query.get(menu_id)
+        if not fm:
+            return jsonify({'error': 'not found'}), 404
+
+        # Update allowed fields
+        for fld in ('name', 'food_type_id', 'category_id', 'calories', 'protein', 'carbs', 'fat', 'is_dessert'):
+            if fld in data:
+                setattr(fm, fld, data.get(fld))
+
+        db.session.commit()
+        return jsonify({'id': fm.id, 'name': fm.name}), 200
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('admin_update_food_menu error')
+        return jsonify({'error': 'internal'}), 500
+
+
+@limiter.limit("30 per minute")
+@app.route('/admin/food-menus/<int:menu_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_food_menu(menu_id):
+    try:
+        fm = FoodMenu.query.get(menu_id)
+        if not fm:
+            return jsonify({'error': 'not found'}), 404
+        db.session.delete(fm)
+        db.session.commit()
+        return jsonify({'status': 'deleted'}), 200
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('admin_delete_food_menu error')
+        return jsonify({'error': 'internal'}), 500
+
 # Register admin blueprint if available
-try:
-    from admin.admin_routes import admin_bp
-    app.register_blueprint(admin_bp, url_prefix='/admin')
-    app.logger.info('Admin blueprint registered at /admin')
-except Exception:
-    app.logger.info('Admin blueprint not available')
-
-# configure basic logging
-logging.basicConfig(level=logging.INFO)
-app.logger.setLevel(logging.INFO)
-
-def ensure_db():
-    with app.app_context():
-        db.create_all()
-
-ensure_db()
 
 
 # ======================
@@ -1257,20 +1414,27 @@ def get_desserts():
         # deployments (`name` vs `dessert_name`). Be defensive when reading.
         cols = db_table_columns('dessert_menus')
 
-        order_col = None
-        if 'dessert_name' in cols:
-            order_col = DessertMenu.dessert_name
-        elif 'name' in cols:
-            order_col = DessertMenu.name
-        q = DessertMenu.query
-        if order_col is not None:
-            q = q.order_by(order_col.asc())
+        # Prefer model-backed attribute `dessert_name` when present
+        if 'dessert_name' in cols and hasattr(DessertMenu, 'dessert_name'):
+            try:
+                items = DessertMenu.query.order_by(DessertMenu.dessert_name.asc()).limit(500).all()
+                out = [d.dessert_name for d in items]
+                return jsonify({'items': out})
+            except Exception:
+                app.logger.exception('dessert model-backed fetch failed; falling back to raw SQL')
 
-        items = q.limit(500).all()
-        out = []
-        for d in items:
-            out.append(getattr(d, 'name', getattr(d, 'dessert_name', '')))
-        return jsonify({'items': out})
+        # Fallback: raw SQL using actual DB column names (handles legacy schema)
+        try:
+            col = 'dessert_name' if 'dessert_name' in cols else ('name' if 'name' in cols else None)
+            if col is None:
+                return jsonify({'items': []})
+            sql = text(f"SELECT {col} FROM dessert_menus ORDER BY {col} ASC LIMIT 500")
+            rows = db.session.execute(sql).fetchall()
+            out = [r[0] if r and len(r) > 0 else '' for r in rows]
+            return jsonify({'items': out})
+        except Exception:
+            app.logger.exception('Failed to fetch desserts (fallback raw sql)')
+            return jsonify({'items': []}), 500
     except Exception:
         app.logger.exception('Failed to fetch desserts')
         return jsonify({'items': []}), 500
@@ -1302,13 +1466,11 @@ def menu_info():
             try:
                 cols = db_table_columns('dessert_menus')
 
-                # Prefer model-backed lookup if mapped attributes exist
+                # Prefer model-backed lookup on `dessert_name` only
                 d = None
                 try:
                     if hasattr(DessertMenu, 'dessert_name'):
                         d = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == name.lower()).first()
-                    elif hasattr(DessertMenu, 'name'):
-                        d = DessertMenu.query.filter(func.lower(DessertMenu.name) == name.lower()).first()
                 except Exception:
                     app.logger.exception('dessert lookup failed (model-backed)')
 
@@ -2474,26 +2636,19 @@ def save_selection():
         except Exception:
             dessert = None
     elif selected_dessert:
-        # DessertMenu schema has varied historically (some tables use `name`,
-        # others use `dessert_name`). Be defensive: inspect available
-        # columns and query by the present column to avoid OperationalError.
-        dessert = None
+        # Try model-backed lookup using `dessert_name` only; if that fails
+        # fall back to raw SQL that inspects actual DB column names.
         cols = db_table_columns('dessert_menus')
 
         try:
-            # Try model-backed attribute lookup first if attribute exists
             if hasattr(DessertMenu, 'dessert_name'):
                 try:
                     dessert = DessertMenu.query.filter(func.lower(DessertMenu.dessert_name) == selected_dessert.lower()).first()
                 except Exception:
                     current_app.logger.exception('dessert lookup failed (model dessert_name)')
-            elif hasattr(DessertMenu, 'name'):
-                try:
-                    dessert = DessertMenu.query.filter(func.lower(DessertMenu.name) == selected_dessert.lower()).first()
-                except Exception:
-                    current_app.logger.exception('dessert lookup failed (model name)')
 
-            # If model attribute not available or lookup failed, try raw SQL to find id
+            # If model-backed lookup didn't find a row, try raw SQL against
+            # the real column name in the DB (handles legacy schema).
             if not dessert:
                 try:
                     if 'dessert_name' in cols:
@@ -2539,8 +2694,7 @@ def save_selection():
     if (selected_menu or menu_id_payload is not None) and not menu:
         return jsonify({"error": "invalid menu"}), 400
 
-    if (selected_dessert or dessert_menu_id_payload is not None) and not dessert:
-        return jsonify({"error": "invalid dessert"}), 400
+    # Note: dessert lookup is optional. If not found, we store NULL in DB.
 
     if selected_drink_type and not drink_type:
         return jsonify({"error": "invalid drink type"}), 400

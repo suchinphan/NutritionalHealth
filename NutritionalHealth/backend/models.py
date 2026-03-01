@@ -218,8 +218,8 @@ class DessertMenu(db.Model):
     __tablename__ = "dessert_menus"
 
     id = db.Column(db.Integer, primary_key=True)
-
-    name = db.Column(db.String(255), nullable=False, index=True)
+    dessert_name = db.Column(db.String(255), nullable=False, index=True)
+    food_type_id = db.Column(db.Integer, db.ForeignKey('food_types.id'), nullable=True, index=True)
     category = db.Column(db.String(100), index=True)
 
     calories = db.Column(db.Float, index=True)
@@ -252,7 +252,7 @@ class UserSelection(db.Model):
     food_type_id = db.Column(db.Integer, db.ForeignKey("food_types.id"), index=True)
     category_id = db.Column(db.Integer, db.ForeignKey("food_categories.id"), index=True)
     menu_id = db.Column(db.Integer, db.ForeignKey("food_menus.id"), index=True)
-    dessert_menu_id = db.Column(db.Integer, db.ForeignKey("dessert_menus.id"), index=True)
+    dessert_menu_id = db.Column(db.Integer, db.ForeignKey('dessert_menus.id'), nullable=True, index=True)
     drink_type_id = db.Column(db.Integer, db.ForeignKey("drink_types.id"), index=True)
     drink_menu_id = db.Column(db.Integer, db.ForeignKey("drink_menus.id"), index=True)
 

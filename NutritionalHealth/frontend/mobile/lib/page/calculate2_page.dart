@@ -94,7 +94,7 @@ class _Calculate2PageState extends State<Calculate2Page> {
       // Desserts
       final dId = sels['dessert_id'];
       if (dId != null) {
-        final r = await api.get('/api/dessert-menus');
+        final r = await api.get('/api/dessert-menus?food_type_id=${ftId ?? 3}');
         if (r.statusCode == 200) {
           try {
             final List decoded = (r.body.isNotEmpty)

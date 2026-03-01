@@ -4,3 +4,5 @@ Flask-Cors
 Werkzeug
 PyMySQL
 cryptography
+Flask-Limiter
+Flask-Admin
